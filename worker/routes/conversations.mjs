@@ -91,6 +91,7 @@ conversations.post('/:id/messages', requireAuth('agents'), async (c) => {
     contextLevel,
     db: c.env.DB,
     entityRef,
+    lastUserMessage: userContent,
   })
 
   // 更新对话上下文级别
