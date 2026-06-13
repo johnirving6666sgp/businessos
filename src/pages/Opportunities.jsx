@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { api } from '../api/client.js'
 import { useAuthStore } from '../store/auth.js'
 import { useUIStore } from '../store/ui.js'
+import { useConversationsStore } from '../store/conversations.js'
+import { createConversation } from '../api/conversations.js'
 import { Badge, RatingBadge } from '../components/ui/Badge.jsx'
 import { Button } from '../components/ui/Button.jsx'
 
@@ -10,15 +12,17 @@ const SCORE_LABELS = { 0: '无用', 30: '一般', 60: '有用', 80: '重要', 10
 const SCORE_COLORS = { 0: 'bg-slate-100 text-slate-500', 30: 'bg-yellow-50 text-yellow-600', 60: 'bg-blue-50 text-blue-600', 80: 'bg-green-50 text-green-700', 100: 'bg-emerald-100 text-emerald-700' }
 const SOURCE_LABELS = { ctbpsp: '中国招标', qianlima: '千里马', manual: '手动添加', unknown: '未知' }
 
-export function Opportunities() {
+export function Opportunities({ onNavigate }) {
   const user = useAuthStore(s => s.user)
   const toast = useUIStore(s => s.toast)
+  const setPendingEntityRef = useConversationsStore(s => s.setPendingEntityRef)
 
   const [opps, setOpps] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(null)
+  const [pullingId, setPullingId] = useState(null)
 
   async function load(p = 1) {
     setLoading(true)
@@ -46,6 +50,23 @@ export function Opportunities() {
     await api.post(`/api/opportunities/${oppId}/save`, { save })
     setOpps(prev => prev.map(o => o.id === oppId ? { ...o, is_saved: save } : o))
     toast(save ? '已收藏' : '已取消收藏', 'success')
+  }
+
+  async function handlePullToChat(opp) {
+    setPullingId(opp.id)
+    try {
+      // 创建新对话（类型为 opportunity）
+      await createConversation('opportunity')
+      // 把商机存进 store，Chat 发第一条消息时会带上
+      setPendingEntityRef({ type: 'opportunity', id: opp.id, name: opp.title })
+      // 跳转到对话页
+      onNavigate?.('chat')
+      toast(`已拉入对话：${opp.title.slice(0, 20)}...`, 'success')
+    } catch (e) {
+      toast('拉入失败：' + e.message, 'error')
+    } finally {
+      setPullingId(null)
+    }
   }
 
   const totalPages = Math.ceil(total / 20)
@@ -82,6 +103,8 @@ export function Opportunities() {
             onToggle={() => setExpanded(v => v === opp.id ? null : opp.id)}
             onRate={handleRate}
             onSave={handleSave}
+            onPullToChat={handlePullToChat}
+            pulling={pullingId === opp.id}
           />
         ))}
       </div>
@@ -106,7 +129,7 @@ export function Opportunities() {
   )
 }
 
-function OpportunityCard({ opp, expanded, onToggle, onRate, onSave }) {
+function OpportunityCard({ opp, expanded, onToggle, onRate, onSave, onPullToChat, pulling }) {
   const hasHighRating = opp.max_rating >= 80
   const isNew = new Date(opp.created_at) > new Date(Date.now() - 86400000 * 2)
 
@@ -199,7 +222,15 @@ function OpportunityCard({ opp, expanded, onToggle, onRate, onSave }) {
               >
                 {opp.is_saved ? '已收藏' : '收藏'}
               </Button>
-              <Button size="sm" variant="ghost" icon="💬">拉进对话</Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="💬"
+                onClick={() => onPullToChat(opp)}
+                disabled={pulling}
+              >
+                {pulling ? '跳转中...' : '拉进对话'}
+              </Button>
               <button onClick={onToggle} className="ml-auto text-xs text-slate-400 hover:text-slate-600">收起</button>
             </div>
           </div>

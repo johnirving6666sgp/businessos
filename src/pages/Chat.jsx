@@ -25,6 +25,8 @@ export function Chat() {
   const contextLevel = useConversationsStore(s => s.contextLevel)
   const setCurrent = useConversationsStore(s => s.setCurrent)
 
+  const pendingEntityRef = useConversationsStore(s => s.pendingEntityRef)
+
   const messagesEndRef = useRef(null)
   const [showHistory, setShowHistory] = useState(false)
   const [loadingConv, setLoadingConv] = useState(false)
@@ -62,12 +64,13 @@ export function Chat() {
 
   async function handleSend(text) {
     let convId = current?.id
-    // 没有当前对话时自动创建
     if (!convId) {
       const conv = await createConversation('personal')
       convId = conv.id
     }
-    await sendMessage(convId, text)
+    // 如果有从其他页面"拉进"的实体，随第一条消息附上
+    const options = pendingEntityRef ? { entity_ref: pendingEntityRef } : {}
+    await sendMessage(convId, text, options)
   }
 
   const levelInfo = CONTEXT_LEVEL_LABELS[contextLevel] || CONTEXT_LEVEL_LABELS[0]
@@ -135,6 +138,17 @@ export function Chat() {
             </Button>
           </div>
         </div>
+
+        {/* 已载入实体提示条 */}
+        {pendingEntityRef && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-violet-50 border-b border-violet-100 text-xs text-violet-700 flex-shrink-0">
+            <span>🎯</span>
+            <span className="flex-1 truncate">
+              已载入{pendingEntityRef.type === 'opportunity' ? '商机' : '客户'}：<strong>{pendingEntityRef.name}</strong>
+            </span>
+            <span className="text-violet-400">发送消息即可开始分析</span>
+          </div>
+        )}
 
         {/* 消息列表 */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">

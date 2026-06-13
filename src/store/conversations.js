@@ -1,17 +1,19 @@
 import { create } from 'zustand'
 
 export const useConversationsStore = create((set, get) => ({
-  list: [],           // 对话列表
-  current: null,      // 当前对话 {id, title, agent_type, context_level}
-  messages: [],       // 当前对话消息
-  streaming: false,   // 是否正在流式输出
-  streamContent: '',  // 流式中的内容
-  contextLevel: 0,    // 当前对话上下文级别
+  list: [],              // 对话列表
+  current: null,         // 当前对话 {id, title, agent_type, context_level}
+  messages: [],          // 当前对话消息
+  streaming: false,      // 是否正在流式输出
+  streamContent: '',     // 流式中的内容
+  contextLevel: 0,       // 当前对话上下文级别
+  pendingEntityRef: null, // 从其他页面"拉进对话"的实体 {type, id, name}
 
   setList: (list) => set({ list }),
   setCurrent: (conv) => set({ current: conv, messages: [], streamContent: '', streaming: false }),
   setMessages: (messages) => set({ messages }),
   setContextLevel: (level) => set({ contextLevel: level }),
+  setPendingEntityRef: (ref) => set({ pendingEntityRef: ref }),
 
   appendMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
 
@@ -20,6 +22,8 @@ export const useConversationsStore = create((set, get) => ({
   endStream: (finalMsg) => set((s) => ({
     streaming: false,
     streamContent: '',
+    // 发出第一条消息后清除 pendingEntityRef
+    pendingEntityRef: null,
     messages: finalMsg
       ? [...s.messages, finalMsg]
       : s.messages,

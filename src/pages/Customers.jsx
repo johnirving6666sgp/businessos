@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api/client.js'
 import { useUIStore } from '../store/ui.js'
+import { useConversationsStore } from '../store/conversations.js'
+import { createConversation } from '../api/conversations.js'
 import { StageBadge, STAGE_META } from '../components/ui/Badge.jsx'
 import { Button } from '../components/ui/Button.jsx'
 
 const STAGES = ['untouched', 'contacted', 'interested', 'quoting', 'closing', 'won', 'lost']
 
-export function Customers() {
+export function Customers({ onNavigate }) {
   const toast = useUIStore(s => s.toast)
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -114,6 +116,7 @@ export function Customers() {
           customer={selected}
           onClose={() => setSelected(null)}
           onUpdate={load}
+          onNavigate={onNavigate}
         />
       )}
 
@@ -174,11 +177,28 @@ function CustomerListRow({ customer, onClick }) {
   )
 }
 
-function CustomerDetail({ customer, onClose, onUpdate }) {
+function CustomerDetail({ customer, onClose, onUpdate, onNavigate }) {
   const toast = useUIStore(s => s.toast)
+  const setPendingEntityRef = useConversationsStore(s => s.setPendingEntityRef)
   const [detail, setDetail] = useState(null)
   const [note, setNote] = useState('')
   const [nextAction, setNextAction] = useState('')
+  const [pulling, setPulling] = useState(false)
+
+  async function handlePullToChat() {
+    setPulling(true)
+    try {
+      await createConversation('customer')
+      setPendingEntityRef({ type: 'customer', id: customer.id, name: customer.name })
+      onClose()
+      onNavigate?.('chat')
+      toast(`已拉入对话：${customer.name}`, 'success')
+    } catch (e) {
+      toast('拉入失败：' + e.message, 'error')
+    } finally {
+      setPulling(false)
+    }
+  }
 
   useEffect(() => {
     api.get(`/api/customers/${customer.id}`)
@@ -209,7 +229,18 @@ function CustomerDetail({ customer, onClose, onUpdate }) {
             <h2 className="font-bold text-slate-800">{customer.name}</h2>
             <StageBadge stage={customer.stage} />
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              icon="💬"
+              onClick={handlePullToChat}
+              disabled={pulling}
+            >
+              {pulling ? '...' : '拉进对话'}
+            </Button>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
