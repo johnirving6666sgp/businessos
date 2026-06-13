@@ -12,6 +12,8 @@ import opportunities from './routes/opportunities.mjs'
 import customers from './routes/customers.mjs'
 import tasks from './routes/tasks.mjs'
 import broadcasts from './routes/broadcasts.mjs'
+import proposals from './routes/proposals.mjs'
+import knowledge from './routes/knowledge.mjs'
 
 const app = new Hono()
 
@@ -32,6 +34,8 @@ app.route('/api/opportunities', opportunities)
 app.route('/api/customers', customers)
 app.route('/api/tasks', tasks)
 app.route('/api/broadcasts', broadcasts)
+app.route('/api/proposals', proposals)
+app.route('/api/knowledge', knowledge)
 
 // 健康检查
 app.get('/api/health', (c) => c.json({

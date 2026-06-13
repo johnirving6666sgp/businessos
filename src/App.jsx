@@ -7,24 +7,15 @@ import { Chat } from './pages/Chat.jsx'
 import { Opportunities } from './pages/Opportunities.jsx'
 import { Customers } from './pages/Customers.jsx'
 import { Tasks } from './pages/Tasks.jsx'
+import { Proposals } from './pages/Proposals.jsx'
+import { Knowledge } from './pages/Knowledge.jsx'
 
-// Placeholder pages（后续实现）
-function Proposals() {
-  return <PagePlaceholder icon="📋" title="方案工程师" desc="正在开发中" />
-}
-function Knowledge() {
-  return <PagePlaceholder icon="📚" title="知识库" desc="正在开发中" />
-}
 function Admin() {
-  return <PagePlaceholder icon="⚙️" title="Jamie Central" desc="管理面板正在开发中" />
-}
-
-function PagePlaceholder({ icon, title, desc }) {
   return (
     <div className="flex flex-col items-center justify-center h-full py-20 text-slate-400">
-      <div className="text-5xl mb-4">{icon}</div>
-      <h2 className="text-xl font-semibold text-slate-600 mb-1">{title}</h2>
-      <p className="text-sm">{desc}</p>
+      <div className="text-5xl mb-4">⚙️</div>
+      <h2 className="text-xl font-semibold text-slate-600 mb-1">Jamie Central</h2>
+      <p className="text-sm">管理面板正在开发中</p>
     </div>
   )
 }
