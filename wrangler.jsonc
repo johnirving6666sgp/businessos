@@ -11,7 +11,7 @@
     {
       "binding": "DB",
       "database_name": "business-os-db",
-      "database_id": "REPLACE_WITH_YOUR_D1_ID"
+      "database_id": "2ee45437-1420-4e52-96bc-bc89f15014c7"
     }
   ],
   "vars": {
