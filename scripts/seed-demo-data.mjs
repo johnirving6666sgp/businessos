@@ -140,6 +140,10 @@ const insertInteraction = db.prepare(`
 
 for (const i of interactions) {
   insertInteraction.run(i)
+  // 同步更新 customers.last_interaction_at
+  db.prepare(
+    `UPDATE customers SET last_interaction_at = datetime('now', '-7 days'), updated_at = datetime('now') WHERE id = ?`
+  ).run(i.customer_id)
 }
 console.log('  ✓ 客户互动记录')
 
@@ -154,8 +158,8 @@ const opportunities = [
     org_name: '中国航发动力研究院',
     budget: '800万元',
     deadline: '2026-07-15',
-    status: 'active',
-    fetch_quality: 90,
+    status: 'verified',
+    fetch_quality: 'full',
     raw_content: '采购真空感应熔炼炉1台，要求：最大熔炼量≥200kg，真空度≤0.01Pa，具备自动浇注功能，提供完整售后培训。',
     keywords: '真空感应熔炼,高温合金,镍基,航空发动机',
   },
@@ -167,8 +171,8 @@ const opportunities = [
     org_name: '中科院物理研究所',
     budget: '450万元',
     deadline: '2026-06-30',
-    status: 'active',
-    fetch_quality: 85,
+    status: 'verified',
+    fetch_quality: 'full',
     raw_content: '拟采购冷坩埚感应悬浮熔炼系统一套，用于高熵合金和难熔金属研究，要求无坩埚污染，悬浮稳定，具备高速摄像接口。',
     keywords: '冷坩埚,悬浮熔炼,高熵合金,难熔金属',
   },
@@ -180,8 +184,8 @@ const opportunities = [
     org_name: '江西稀贵金属产业集团',
     budget: '1200万元',
     deadline: '2026-08-01',
-    status: 'active',
-    fetch_quality: 75,
+    status: 'verified',
+    fetch_quality: 'partial',
     raw_content: '园区建设需求，采购真空冶炼设备共5台套，包含：真空感应炉×2、真空自耗炉×2、电子束炉×1，要求统一售后服务。',
     keywords: '真空冶炼,稀贵金属,真空自耗炉,电子束炉',
   },
@@ -193,8 +197,8 @@ const opportunities = [
     org_name: '哈尔滨工业大学',
     budget: '60万元',
     deadline: '2026-06-25',
-    status: 'active',
-    fetch_quality: 70,
+    status: 'verified',
+    fetch_quality: 'partial',
     raw_content: '材料学院科研用，采购小型真空电弧熔炼炉1台，容量≥50g，具备翻转熔炼功能，配吸铸模具。',
     keywords: '真空电弧熔炼,高校,科研,小型',
   },
@@ -206,8 +210,8 @@ const opportunities = [
     org_name: '比亚迪研究院',
     budget: '300万元',
     deadline: '2026-07-30',
-    status: 'active',
-    fetch_quality: 80,
+    status: 'verified',
+    fetch_quality: 'full',
     raw_content: '新能源汽车永磁材料和铜合金研究，采购中型真空感应熔炼炉，要求50kg级，配套真空热处理功能，需提供工艺方案。',
     keywords: '新能源,永磁材料,铜合金,真空感应',
   },

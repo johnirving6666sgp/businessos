@@ -127,7 +127,8 @@ async function autoResolveEntity(db, text, userId) {
   }
 
   const { results: opps } = await db.prepare(
-    `SELECT id, title, org_name FROM opportunities WHERE status = 'active' LIMIT 20`
+    `SELECT id, title, org_name FROM opportunities
+     WHERE status NOT IN ('dismissed','merged') AND merged_into IS NULL LIMIT 20`
   ).all()
 
   for (const o of opps) {
@@ -165,6 +166,11 @@ export async function buildSystemPrompt({ user, contextLevel, db, entityRef, las
     can_see: ['任务', '客户'],
   }
 
+  // 解析权限（user.permissions 是 JSON 字符串）
+  const perms = (() => {
+    try { return JSON.parse(user.permissions || '{}') } catch { return {} }
+  })()
+
   // ── 身份与公司背景（始终存在）─────────────────────────────
   lines.push(`你是 ${user.display_name} 的专属工作 AI，专注于【${profile.focus}】方向。`)
   lines.push(``)
@@ -201,171 +207,193 @@ export async function buildSystemPrompt({ user, contextLevel, db, entityRef, las
 
   // ── Level 1：当前工作状态 ──────────────────────────────────
   if (contextLevel >= 1) {
-    const { results: myTasks } = await db.prepare(
-      `SELECT title, status, due_date, priority FROM tasks
-       WHERE assignee_id = ? AND status NOT IN ('done','closed')
-       ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
-                CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC
-       LIMIT 5`
-    ).bind(user.id).all()
+    try {
+      const { results: myTasks } = await db.prepare(
+        `SELECT title, status, due_date, priority FROM tasks
+         WHERE assignee_id = ? AND status NOT IN ('done','closed')
+         ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
+                  CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC
+         LIMIT 5`
+      ).bind(user.id).all()
 
-    if (myTasks.length > 0) {
-      lines.push(`\n【我当前的待办事项】`)
-      for (const t of myTasks) {
-        const due = t.due_date ? `截止 ${t.due_date}` : '无截止'
-        const pri = t.priority === 'high' ? '🔴' : '🟡'
-        lines.push(`${pri} ${t.title}（${TASK_STATUS_LABELS[t.status]}，${due}）`)
+      if (myTasks.length > 0) {
+        lines.push(`\n【我当前的待办事项】`)
+        for (const t of myTasks) {
+          const due = t.due_date ? `截止 ${t.due_date}` : '无截止'
+          const pri = t.priority === 'high' ? '🔴' : '🟡'
+          lines.push(`${pri} ${t.title}（${TASK_STATUS_LABELS[t.status]}，${due}）`)
+        }
       }
+    } catch (e) {
+      lines.push(`\n[任务数据加载失败]`)
     }
 
-    const { results: myCustomers } = await db.prepare(
-      `SELECT name, stage, last_interaction_at,
-              CAST((julianday('now') - julianday(COALESCE(last_interaction_at, created_at))) AS INTEGER) as days_silent
-       FROM customers
-       WHERE owner_id = ? AND stage NOT IN ('won','lost')
-       ORDER BY CASE stage
-         WHEN 'closing' THEN 1 WHEN 'quoting' THEN 2 WHEN 'interested' THEN 3
-         WHEN 'contacted' THEN 4 ELSE 5 END, last_interaction_at ASC
-       LIMIT 5`
-    ).bind(user.id).all()
+    // 仅当用户有 customers 权限时才加载客户列表
+    if (perms.customers) {
+      try {
+        const { results: myCustomers } = await db.prepare(
+          `SELECT name, stage, last_interaction_at,
+                  CAST((julianday('now') - julianday(COALESCE(last_interaction_at, created_at))) AS INTEGER) as days_silent
+           FROM customers
+           WHERE owner_id = ? AND stage NOT IN ('won','lost')
+           ORDER BY CASE stage
+             WHEN 'closing' THEN 1 WHEN 'quoting' THEN 2 WHEN 'interested' THEN 3
+             WHEN 'contacted' THEN 4 ELSE 5 END, last_interaction_at ASC
+           LIMIT 5`
+        ).bind(user.id).all()
 
-    if (myCustomers.length > 0) {
-      lines.push(`\n【我负责的客户（按进度排序）】`)
-      for (const c of myCustomers) {
-        const silent = c.days_silent > 7 ? ` ⚠️ ${c.days_silent}天未联系` : ''
-        lines.push(`- ${c.name}（${STAGE_LABELS[c.stage]}）${silent}`)
+        if (myCustomers.length > 0) {
+          lines.push(`\n【我负责的客户（按进度排序）】`)
+          for (const c of myCustomers) {
+            const silent = c.days_silent > 7 ? ` ⚠️ ${c.days_silent}天未联系` : ''
+            lines.push(`- ${c.name}（${STAGE_LABELS[c.stage]}）${silent}`)
+          }
+        }
+      } catch (e) {
+        lines.push(`\n[客户数据加载失败]`)
       }
     }
   }
 
   // ── Level 2：精准实体上下文（自动识别 + 手动传入）─────────
 
-  // 尝试从最近消息中自动识别实体
   let resolvedEntity = entityRef
   if (!resolvedEntity && lastUserMessage && contextLevel >= 2) {
-    resolvedEntity = await autoResolveEntity(db, lastUserMessage, user.id)
+    try {
+      resolvedEntity = await autoResolveEntity(db, lastUserMessage, user.id)
+    } catch (e) { /* 实体识别失败不影响主流程 */ }
   }
 
   if (contextLevel >= 2 && resolvedEntity) {
+    // 客户详情：需要 customers 权限
+    if (resolvedEntity.type === 'customer' && perms.customers) {
+      try {
+        const c = await db.prepare('SELECT * FROM customers WHERE id = ?').bind(resolvedEntity.id).first()
+        if (c) {
+          lines.push(`\n【📋 当前聚焦客户：${c.name}】`)
+          lines.push(`- 跟进阶段：${STAGE_LABELS[c.stage] || c.stage}`)
+          if (c.industry) lines.push(`- 所属行业：${c.industry}`)
+          if (c.contact_name) lines.push(`- 核心联系人：${c.contact_name}${c.contact_phone ? '  📞 ' + c.contact_phone : ''}${c.contact_email ? '  ✉️ ' + c.contact_email : ''}`)
+          if (c.website) lines.push(`- 官网：${c.website}`)
+          if (c.notes) lines.push(`- 情况摘要：${c.notes}`)
 
-    if (resolvedEntity.type === 'customer') {
-      const c = await db.prepare('SELECT * FROM customers WHERE id = ?').bind(resolvedEntity.id).first()
-      if (c) {
-        lines.push(`\n【📋 当前聚焦客户：${c.name}】`)
-        lines.push(`- 跟进阶段：${STAGE_LABELS[c.stage] || c.stage}`)
-        lines.push(`- 负责销售：${user.display_name}`)
-        if (c.industry) lines.push(`- 所属行业：${c.industry}`)
-        if (c.contact_name) lines.push(`- 核心联系人：${c.contact_name}${c.contact_phone ? '  📞 ' + c.contact_phone : ''}${c.contact_email ? '  ✉️ ' + c.contact_email : ''}`)
-        if (c.website) lines.push(`- 官网：${c.website}`)
-        if (c.notes) lines.push(`- 情况摘要：${c.notes}`)
+          const { results: interactions } = await db.prepare(
+            `SELECT type, summary, next_action, next_action_due, created_at
+             FROM customer_interactions
+             WHERE customer_id = ? ORDER BY created_at DESC LIMIT 5`
+          ).bind(c.id).all()
 
-        const { results: interactions } = await db.prepare(
-          `SELECT type, summary, next_action, next_action_due, created_at
-           FROM customer_interactions
-           WHERE customer_id = ? ORDER BY created_at DESC LIMIT 5`
-        ).bind(c.id).all()
+          if (interactions.length > 0) {
+            lines.push(`- 历史沟通记录：`)
+            for (const i of interactions) {
+              const typeLabel = { call: '📞电话', meeting: '🤝会面', email: '📧邮件', visit: '🏭拜访', demo: '🖥️演示', note: '📝备注', stage_change: '🔄阶段变更' }[i.type] || i.type
+              lines.push(`  ${i.created_at.slice(0, 10)} [${typeLabel}] ${i.summary}`)
+              if (i.next_action) lines.push(`  → 下一步：${i.next_action}${i.next_action_due ? '（' + i.next_action_due + '前）' : ''}`)
+            }
+          }
 
-        if (interactions.length > 0) {
-          lines.push(`- 历史沟通记录：`)
-          for (const i of interactions) {
-            const typeLabel = { call: '📞电话', meeting: '🤝会面', email: '📧邮件', visit: '🏭拜访', demo: '🖥️演示' }[i.type] || i.type
-            lines.push(`  ${i.created_at.slice(0, 10)} [${typeLabel}] ${i.summary}`)
-            if (i.next_action) lines.push(`  → 下一步：${i.next_action}${i.next_action_due ? '（' + i.next_action_due + '前）' : ''}`)
+          const { results: relatedTasks } = await db.prepare(
+            `SELECT title, status, due_date FROM tasks
+             WHERE customer_id = ? AND status NOT IN ('done','closed') LIMIT 3`
+          ).bind(c.id).all()
+          if (relatedTasks.length > 0) {
+            lines.push(`- 关联任务：`)
+            for (const t of relatedTasks) {
+              lines.push(`  · ${t.title}（${TASK_STATUS_LABELS[t.status]}${t.due_date ? '，截止 ' + t.due_date : ''}）`)
+            }
           }
         }
-
-        // 相关任务
-        const { results: relatedTasks } = await db.prepare(
-          `SELECT title, status, assignee_id, due_date FROM tasks
-           WHERE customer_id = ? AND status NOT IN ('done','closed') LIMIT 3`
-        ).bind(c.id).all()
-        if (relatedTasks.length > 0) {
-          lines.push(`- 关联任务：`)
-          for (const t of relatedTasks) {
-            lines.push(`  · ${t.title}（${TASK_STATUS_LABELS[t.status]}${t.due_date ? '，截止 ' + t.due_date : ''}）`)
-          }
-        }
+      } catch (e) {
+        lines.push(`\n[客户详情加载失败]`)
       }
     }
 
     if (resolvedEntity.type === 'opportunity') {
-      const o = await db.prepare('SELECT * FROM opportunities WHERE id = ?').bind(resolvedEntity.id).first()
-      if (o) {
-        lines.push(`\n【🎯 当前聚焦商机：${o.title}】`)
-        if (o.org_name) lines.push(`- 招标单位：${o.org_name}`)
-        if (o.budget) lines.push(`- 预算金额：${o.budget}`)
-        if (o.deadline) lines.push(`- 投标截止：${o.deadline}`)
-        if (o.source_platform) lines.push(`- 信息来源：${o.source_platform}`)
-        if (o.keywords) lines.push(`- 关键词：${o.keywords}`)
-        if (o.raw_content) lines.push(`- 招标内容：\n${o.raw_content}`)
+      try {
+        const o = await db.prepare('SELECT * FROM opportunities WHERE id = ?').bind(resolvedEntity.id).first()
+        if (o) {
+          lines.push(`\n【🎯 当前聚焦商机：${o.title}】`)
+          if (o.org_name) lines.push(`- 招标单位：${o.org_name}`)
+          if (o.budget) lines.push(`- 预算金额：${o.budget}`)
+          if (o.deadline) lines.push(`- 投标截止：${o.deadline}`)
+          if (o.source_platform) lines.push(`- 信息来源：${o.source_platform}`)
+          if (o.keywords) lines.push(`- 关键词：${o.keywords}`)
+          if (o.raw_content) lines.push(`- 招标内容：\n${o.raw_content}`)
 
-        // 团队评分情况
-        const { results: ratings } = await db.prepare(
-          `SELECT u.display_name, r.score, r.note FROM opportunity_ratings r
-           JOIN users u ON u.id = r.user_id
-           WHERE r.opportunity_id = ? ORDER BY r.score DESC`
-        ).bind(o.id).all()
-        if (ratings.length > 0) {
-          lines.push(`- 团队评分：`)
-          for (const r of ratings) {
-            const scoreLabel = r.score >= 80 ? '强烈推荐' : r.score >= 60 ? '值得跟进' : r.score >= 30 ? '谨慎评估' : '暂不推荐'
-            lines.push(`  · ${r.display_name}：${r.score}分（${scoreLabel}）${r.note ? ' — ' + r.note : ''}`)
+          const { results: ratings } = await db.prepare(
+            `SELECT u.display_name, r.score, r.note FROM opportunity_ratings r
+             JOIN users u ON u.id = r.user_id
+             WHERE r.opportunity_id = ? ORDER BY r.score DESC`
+          ).bind(o.id).all()
+          if (ratings.length > 0) {
+            lines.push(`- 团队评分：`)
+            for (const r of ratings) {
+              const scoreLabel = r.score >= 80 ? '强烈推荐' : r.score >= 60 ? '值得跟进' : r.score >= 30 ? '谨慎评估' : '暂不推荐'
+              lines.push(`  · ${r.display_name}：${r.score}分（${scoreLabel}）${r.note ? ' — ' + r.note : ''}`)
+            }
           }
         }
+      } catch (e) {
+        lines.push(`\n[商机详情加载失败]`)
       }
     }
   }
 
   // ── Level 3：完整上下文 ────────────────────────────────────
   if (contextLevel >= 3) {
-    // 热门未跟进商机
-    const { results: hotOpps } = await db.prepare(
-      `SELECT o.title, o.org_name, o.budget, o.deadline, MAX(r.score) as max_score
-       FROM opportunities o
-       JOIN opportunity_ratings r ON r.opportunity_id = o.id
-       WHERE o.status = 'active'
-         AND o.id NOT IN (SELECT opportunity_id FROM opportunity_ratings WHERE user_id = ?)
-       GROUP BY o.id HAVING MAX(r.score) >= 60
-       ORDER BY MAX(r.score) DESC LIMIT 3`
-    ).bind(user.id).all()
+    try {
+      // 热门未跟进商机（status NOT IN dismissed/merged 覆盖所有活跃状态）
+      const { results: hotOpps } = await db.prepare(
+        `SELECT o.title, o.org_name, o.budget, o.deadline, MAX(r.score) as max_score
+         FROM opportunities o
+         JOIN opportunity_ratings r ON r.opportunity_id = o.id
+         WHERE o.status NOT IN ('dismissed', 'merged')
+           AND o.merged_into IS NULL
+           AND o.id NOT IN (SELECT opportunity_id FROM opportunity_ratings WHERE user_id = ?)
+         GROUP BY o.id HAVING MAX(r.score) >= 60
+         ORDER BY MAX(r.score) DESC LIMIT 3`
+      ).bind(user.id).all()
 
-    if (hotOpps.length > 0) {
-      lines.push(`\n【🔥 团队热推商机（你尚未评分）】`)
-      for (const o of hotOpps) {
-        lines.push(`- ${o.title}（${o.org_name}，${o.budget}，截止 ${o.deadline}，团队最高评 ${o.max_score} 分）`)
-      }
-    }
-
-    // 方案历史
-    if (resolvedEntity?.type === 'customer' || resolvedEntity?.customerId) {
-      const custId = resolvedEntity.id || resolvedEntity.customerId
-      const { results: proposals } = await db.prepare(
-        `SELECT title, status, price_range_min, price_range_max, updated_at FROM proposals
-         WHERE customer_id = ? ORDER BY updated_at DESC LIMIT 3`
-      ).bind(custId).all()
-      if (proposals.length > 0) {
-        lines.push(`\n【📄 历史方案/报价】`)
-        for (const p of proposals) {
-          const range = p.price_range_min
-            ? `${p.price_range_min}~${p.price_range_max} 万元`
-            : '价格待定'
-          lines.push(`- ${p.title}（${p.status}，${range}，${p.updated_at?.slice(0, 10)}更新）`)
+      if (hotOpps.length > 0) {
+        lines.push(`\n【🔥 团队热推商机（你尚未评分）】`)
+        for (const o of hotOpps) {
+          lines.push(`- ${o.title}（${o.org_name}，${o.budget}，截止 ${o.deadline}，团队最高评 ${o.max_score} 分）`)
         }
       }
+    } catch (e) { /* 热门商机加载失败不阻断 */ }
+
+    if (resolvedEntity?.type === 'customer' && perms.customers) {
+      try {
+        const custId = resolvedEntity.id
+        const { results: proposals } = await db.prepare(
+          `SELECT title, status, price_range_min, price_range_max, updated_at FROM proposals
+           WHERE customer_id = ? ORDER BY updated_at DESC LIMIT 3`
+        ).bind(custId).all()
+        if (proposals.length > 0) {
+          lines.push(`\n【📄 历史方案/报价】`)
+          for (const p of proposals) {
+            const range = p.price_range_min
+              ? `${p.price_range_min}~${p.price_range_max} 万元`
+              : '价格待定'
+            lines.push(`- ${p.title}（${p.status}，${range}，${p.updated_at?.slice(0, 10)}更新）`)
+          }
+        }
+      } catch (e) { /* 方案历史加载失败不阻断 */ }
     }
 
-    // 团队知识库
-    const { results: knowledge } = await db.prepare(
-      `SELECT title, content FROM knowledge_items
-       WHERE visibility IN ('team','public') AND is_published = 1
-       ORDER BY updated_at DESC LIMIT 3`
-    ).all()
-    if (knowledge.length > 0) {
-      lines.push(`\n【📚 团队经验参考】`)
-      for (const k of knowledge) {
-        lines.push(`- ${k.title}：${k.content.slice(0, 300)}`)
+    try {
+      const { results: knowledge } = await db.prepare(
+        `SELECT title, content FROM knowledge_items
+         WHERE visibility IN ('team','public') AND is_published = 1
+         ORDER BY updated_at DESC LIMIT 3`
+      ).all()
+      if (knowledge.length > 0) {
+        lines.push(`\n【📚 团队经验参考】`)
+        for (const k of knowledge) {
+          lines.push(`- ${k.title}：${k.content.slice(0, 300)}`)
+        }
       }
-    }
+    } catch (e) { /* 知识库加载失败不阻断 */ }
   }
 
   return lines.join('\n')

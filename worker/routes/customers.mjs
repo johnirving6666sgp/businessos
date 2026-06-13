@@ -74,7 +74,7 @@ customers.get('/:id', requireAuth('customers'), async (c) => {
     `SELECT t.*, u.display_name as assignee_name
      FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id
      WHERE t.customer_id = ? AND t.status NOT IN ('done','closed')
-     ORDER BY t.due_date ASC NULLS LAST`
+     ORDER BY CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END, t.due_date ASC`
   ).bind(id).all()
 
   const { results: proposals } = await c.env.DB.prepare(
