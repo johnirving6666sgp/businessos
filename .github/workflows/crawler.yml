@@ -1,0 +1,63 @@
+name: 爬虫定时任务
+
+on:
+  # 每6小时运行一次（UTC时间 0/6/12/18 点）
+  schedule:
+    - cron: '0 0,6,12,18 * * *'
+  # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '模拟运行（不推送）'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+      max_targets:
+        description: '最多处理几个目标机构（默认全部）'
+        required: false
+        default: ''
+
+jobs:
+  crawl:
+    name: 抓取采购公告
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 缓存爬虫状态文件，跨 run 保持已处理 URL 记录
+      - name: Restore crawler state cache
+        uses: actions/cache@v4
+        with:
+          path: crawler/.state.json
+          key: crawler-state-${{ github.run_number }}
+          restore-keys: |
+            crawler-state-
+
+      - name: Run crawler
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CRAWLER_KEY: ${{ secrets.CRAWLER_SECRET }}
+          API_BASE: https://businessos.giantmedal.com
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          MAX_TARGETS: ${{ github.event.inputs.max_targets || '' }}
+        run: node crawler/run.mjs
+
+      - name: Save crawler state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: crawler/.state.json
+          key: crawler-state-${{ github.run_number }}
