@@ -37,12 +37,46 @@ const BING_KEY      = process.env.BING_API_KEY || null
 if (!ANTHROPIC_KEY) { console.error('❌ 缺少 ANTHROPIC_API_KEY'); process.exit(1) }
 if (!CRAWLER_KEY && !DRY_RUN) { console.error('❌ 缺少 CRAWLER_KEY（或设 DRY_RUN=true）'); process.exit(1) }
 
+// ── 启动预检：验证 Anthropic API Key ──────────────────────────
+async function validateAnthropicKey(key) {
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 10,
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    })
+    if (res.status === 401) {
+      const err = await res.json()
+      console.error(`❌ ANTHROPIC_API_KEY 无效: ${err.error?.message}`)
+      console.error('   请到 https://console.anthropic.com/settings/keys 获取有效 Key')
+      process.exit(1)
+    }
+    if (res.status === 200 || res.status === 529) return // 529=过载但Key有效
+    // 其他状态码（如 500）不影响 Key 有效性
+  } catch (err) {
+    console.warn(`⚠️  无法验证 API Key（网络问题）: ${err.message}，继续运行`)
+  }
+}
+
 // ── 主流程 ────────────────────────────────────────────────────
 async function main() {
   console.log(`\n🕷️  BusinessOS 爬虫 ${new Date().toLocaleString('zh-CN')}`)
   console.log(`   目标服务器: ${API_BASE}`)
   console.log(`   激活模式:   ${MODES.join(', ')}`)
   console.log(`   运行方式:   ${DRY_RUN ? '模拟（不推送）' : '正式推送'}`)
+
+  // 预检 API Key，Key 无效时立即退出
+  process.stdout.write('   验证 API Key... ')
+  await validateAnthropicKey(ANTHROPIC_KEY)
+  console.log('✅')
 
   const state = loadState()
   state.stats = { ...state.stats, total: 0, pushed: 0, skipped: 0, errors: 0 }
