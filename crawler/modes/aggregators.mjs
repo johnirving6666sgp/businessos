@@ -56,51 +56,60 @@ export const AGGREGATOR_TARGETS = [
   },
 
   // ── 全国公共资源交易平台 ──────────────────────────────
+  // 注：deal.ggzy.gov.cn 需要 POST，改用首页搜索
   {
     id: 'ggzy-national',
-    name: '全国公共资源交易平台 — 真空设备',
-    url: 'https://deal.ggzy.gov.cn/ds/deal/dealList_find.jsp?DEAL_TIME=9999&DEAL_TYPE=01&DEAL_CLASSIFY=&DEAL_STAGE=&DEAL_PROVINCE=00&DEAL_CITY=0000&DEAL_PLATFORM=0&DEAL_CONTENT=真空熔炼&PAGESIZE=20&PAGENUMBER=1',
+    name: '全国公共资源交易平台',
+    url: 'https://ggzy.gov.cn/information/html/search/001001/1.html?searchValue=%E7%9C%9F%E7%A9%BA%E7%86%94%E7%82%BC',
     type: 'aggregator',
     priority: 'medium',
-    keywords: ['真空熔炼', '采购'],
-    linkPattern: /detail|notice|info/i,
+    keywords: ['真空熔炼', '采购', '招标'],
+    linkPattern: /detail|notice|info|html/i,
     minContentSize: 2000,
   },
 
-  // ── 政采云（浙江省，数据质量高，系统现代）────────────
+  // ── 政采云（浙江省，数据质量高）────────────────────────
+  // 使用 HTML 搜索页，而非内部 API（内部 API 405）
   {
     id: 'zcygov-vim',
     name: '政采云 — 真空熔炼',
-    url: 'https://www.zcygov.cn/api/mall-purchaseact-query/purchaseList/getList?keyword=真空熔炼&pageNo=1&pageSize=20',
+    url: 'https://www.zcygov.cn/purchase-result?keyword=%E7%9C%9F%E7%A9%BA%E7%86%94%E7%82%BC',
     type: 'aggregator',
     priority: 'medium',
-    keywords: ['真空熔炼'],
-    linkPattern: /detail|notice/i,
-    minContentSize: 500,
-    isJson: true,  // API 接口返回 JSON
+    keywords: ['真空熔炼', '采购'],
+    linkPattern: /detail|notice|purchase/i,
+    minContentSize: 3000,
   },
-
-  // ── 中国招标投标公共服务平台（国家发改委主管）────────
   {
-    id: 'cebpubservice',
-    name: '中国招标投标公共服务平台',
-    url: 'https://www.cebpubservice.com/ctpsp/cGongGaoController/selectCGGList.do?searchContentType=1&searchContent=真空熔炼&pageNum=1&pageSize=20',
-    type: 'aggregator',
-    priority: 'medium',
-    keywords: ['真空熔炼', '高温合金', '真空设备'],
-    linkPattern: /detail|gg|notice/i,
-    minContentSize: 1000,
-  },
-
-  // ── 必联网（商业聚合，覆盖面广）──────────────────────
-  {
-    id: 'bilian-vim',
-    name: '必联网 — 真空熔炼',
-    url: 'https://www.bilian.com/search?keywords=真空熔炼&type=1',
+    id: 'zcygov-coating',
+    name: '政采云 — 真空镀膜',
+    url: 'https://www.zcygov.cn/purchase-result?keyword=%E7%9C%9F%E7%A9%BA%E9%95%80%E8%86%9C',
     type: 'aggregator',
     priority: 'low',
-    keywords: ['真空熔炼', '采购'],
-    linkPattern: /info|detail|notice/i,
+    keywords: ['真空镀膜', 'PVD'],
+    linkPattern: /detail|notice|purchase/i,
+    minContentSize: 3000,
+  },
+
+  // ── 中国招标网（chinabidding.com.cn，商业聚合，访问稳定）
+  {
+    id: 'chinabidding-vim',
+    name: '中国招标网 — 真空熔炼',
+    url: 'http://www.chinabidding.com.cn/jyxx-search.html?kw=%E7%9C%9F%E7%A9%BA%E7%86%94%E7%82%BC',
+    type: 'aggregator',
+    priority: 'medium',
+    keywords: ['真空熔炼', '感应炉', '采购'],
+    linkPattern: /jyxx|detail|notice/i,
+    minContentSize: 2000,
+  },
+  {
+    id: 'chinabidding-hightemp',
+    name: '中国招标网 — 高温合金',
+    url: 'http://www.chinabidding.com.cn/jyxx-search.html?kw=%E9%AB%98%E6%B8%A9%E5%90%88%E9%87%91+%E7%86%94%E7%82%BC',
+    type: 'aggregator',
+    priority: 'medium',
+    keywords: ['高温合金', '熔炼'],
+    linkPattern: /jyxx|detail|notice/i,
     minContentSize: 2000,
   },
 ]

@@ -1,103 +1,151 @@
 /**
  * Mode B: 搜索引擎驱动爬取
  *
- * 利用搜索引擎已有的索引，绕过直连 IP 封锁问题。
- * 搜到的结果直接访问原始页面详情。
- *
- * 使用方案：
- *   1. DuckDuckGo HTML (无需 API Key，不封爬虫)
- *   2. Bing Search API (Azure 免费 F1: 1000次/月，备选)
- *
- * 优势：覆盖范围广，能找到未在 targets 列表里的机构公告
+ * 三层策略（依次降级）：
+ *   1. DuckDuckGo HTML — 无需 Key，但格式经常变
+ *   2. Bing HTML — 无需 Key，结果质量好，对中文友好
+ *   3. Bing Search API — 需 Azure Key，可选
  */
 
 import { fetchPage, htmlToText, sleep } from '../lib/http.mjs'
 
-// 搜索关键词组合
 const SEARCH_QUERIES = [
   '真空熔炼炉 招标 采购公告 2026',
   '真空感应熔炼 设备采购 招标',
   '高温合金 真空冶金 采购 公告',
   '真空电弧炉 招标 公告',
-  'VIM 真空感应炉 采购',
   '粉末冶金 真空烧结 招标 公告',
   '真空镀膜设备 采购 招标 2026',
   '定向凝固 真空炉 采购 公告',
 ]
 
+// ── DuckDuckGo ────────────────────────────────────────────────
+
 /**
- * DuckDuckGo HTML 搜索（不需要 API Key）
- * @param {string} query
- * @returns {Promise<Array<{url: string, title: string, snippet: string}>>}
+ * DuckDuckGo HTML 搜索 + 健壮解析
+ * DDG 不断改版，用多种解析方式兜底
  */
 export async function searchDuckDuckGo(query) {
-  const encodedQuery = encodeURIComponent(query)
-  const url = `https://html.duckduckgo.com/html/?q=${encodedQuery}&kl=cn-zh`
+  const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=cn-zh&s=0`
 
   let html
   try {
     ;({ html } = await fetchPage(url, { timeoutMs: 20000, retries: 1 }))
   } catch (err) {
-    console.warn(`    [DDG] 搜索失败: ${err.message}`)
+    console.warn(`    [DDG] 请求失败: ${err.message}`)
     return []
   }
 
-  return parseDDGResults(html)
+  if (html.length < 500) {
+    console.warn(`    [DDG] 响应过短 (${html.length} bytes)，可能被限流`)
+    return []
+  }
+
+  return parseDDG(html)
 }
 
-/**
- * 解析 DuckDuckGo HTML 搜索结果
- */
-function parseDDGResults(html) {
+function parseDDG(html) {
   const results = []
+  const seen = new Set()
 
-  // DDG HTML 结果格式：<a class="result__url" href="...">
-  const linkRegex = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
-  const snippetRegex = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi
-
-  const links = []
-  const snippets = []
-
+  // 方法1: 新版 DDG HTML（class="result__a"）
+  const re1 = /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
   let m
-  while ((m = linkRegex.exec(html)) !== null) {
-    const href = m[1]
+  while ((m = re1.exec(html)) !== null) {
+    const href = decodeURIComponent(m[1]).replace(/^\/\/duckduckgo\.com\/l\/\?uddg=/, '')
     const title = m[2].replace(/<[^>]+>/g, '').trim()
-    if (href.startsWith('http') && title) {
-      links.push({ href, title })
+    if (href.startsWith('http') && !seen.has(href)) {
+      seen.add(href)
+      results.push({ url: href, title, snippet: '' })
     }
   }
 
-  while ((m = snippetRegex.exec(html)) !== null) {
-    snippets.push(m[1].replace(/<[^>]+>/g, '').trim())
+  // 方法2: 通用结果链接提取（兜底）
+  if (results.length === 0) {
+    const re2 = /href="(https?:\/\/(?!duckduckgo\.com)[^"]+)"[^>]*>([^<]{10,100})</gi
+    while ((m = re2.exec(html)) !== null) {
+      const href = m[1]
+      const title = m[2].trim()
+      if (!seen.has(href)) {
+        seen.add(href)
+        results.push({ url: href, title, snippet: '' })
+      }
+    }
   }
 
-  // 合并
-  for (let i = 0; i < links.length; i++) {
-    results.push({
-      url: links[i].href,
-      title: links[i].title,
-      snippet: snippets[i] || '',
-    })
+  // 提取摘要
+  const snips = []
+  const reSnip = /<a[^>]+class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/gi
+  while ((m = reSnip.exec(html)) !== null) {
+    snips.push(m[1].replace(/<[^>]+>/g, '').trim())
+  }
+  results.forEach((r, i) => { r.snippet = snips[i] || '' })
+
+  return results.slice(0, 15)
+}
+
+// ── Bing HTML（无需 API Key，中文内容效果好）──────────────────
+
+export async function searchBingHTML(query) {
+  const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&mkt=zh-CN&setlang=zh-CN&count=15&first=1`
+
+  let html
+  try {
+    ;({ html } = await fetchPage(url, {
+      timeoutMs: 20000,
+      retries: 1,
+    }))
+  } catch (err) {
+    console.warn(`    [Bing HTML] 请求失败: ${err.message}`)
+    return []
+  }
+
+  if (html.length < 500) {
+    console.warn(`    [Bing HTML] 响应过短，可能被限流`)
+    return []
+  }
+
+  return parseBingHTML(html)
+}
+
+function parseBingHTML(html) {
+  const results = []
+  const seen = new Set()
+
+  // Bing 搜索结果：<h2><a href="..."...>title</a></h2>
+  const re = /<h2[^>]*>\s*<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>\s*<\/h2>/gi
+  let m
+  while ((m = re.exec(html)) !== null) {
+    const href = m[1].split('&')[0] // 去掉 Bing 追踪参数
+    const title = m[2].replace(/<[^>]+>/g, '').trim()
+    if (!seen.has(href) && title) {
+      seen.add(href)
+      results.push({ url: href, title, snippet: '' })
+    }
+  }
+
+  // 兜底：提取 cite 标签附近的 href
+  if (results.length === 0) {
+    const re2 = /href="(https?:\/\/(?!(?:www\.)?bing\.com)[^"]{10,200})"/gi
+    while ((m = re2.exec(html)) !== null) {
+      const href = m[1]
+      if (!seen.has(href)) {
+        seen.add(href)
+        results.push({ url: href, title: '', snippet: '' })
+      }
+    }
   }
 
   return results.slice(0, 15)
 }
 
-/**
- * Bing Search API（Azure 免费 F1 账户）
- * @param {string} query
- * @param {string} apiKey - Bing API Key
- * @returns {Promise<Array>}
- */
-export async function searchBing(query, apiKey) {
-  const url = `https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(query)}&mkt=zh-CN&count=15&freshness=Month`
+// ── Bing Search API（Azure，可选）────────────────────────────
 
+export async function searchBingAPI(query, apiKey) {
+  const url = `https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(query)}&mkt=zh-CN&count=15&freshness=Month`
   try {
     const res = await fetch(url, {
-      headers: {
-        'Ocp-Apim-Subscription-Key': apiKey,
-        'Accept': 'application/json',
-      },
+      headers: { 'Ocp-Apim-Subscription-Key': apiKey },
     })
     if (!res.ok) throw new Error(`Bing API ${res.status}`)
     const data = await res.json()
@@ -107,76 +155,70 @@ export async function searchBing(query, apiKey) {
       snippet: item.snippet,
     }))
   } catch (err) {
-    console.warn(`    [Bing] 搜索失败: ${err.message}`)
+    console.warn(`    [Bing API] ${err.message}`)
     return []
   }
 }
 
-/**
- * 过滤搜索结果：只保留相关的采购公告
- */
-export function filterSearchResults(results) {
-  const INCLUDE_DOMAINS = [
-    'gov.cn', 'ac.cn', 'edu.cn', 'com.cn',
-    'ccgp.gov.cn', 'ggzy.gov.cn', 'cebpubservice.com',
-    'chinabidding.com.cn', 'bilian.com', 'bidcenter.com.cn',
-  ]
-  const EXCLUDE_PATTERNS = [
-    /baidu\.com\/link/i,   // 百度跳转链接
-    /bing\.com/i,
-    /google\.com/i,
-    /zhihu\.com/i,
-    /baike\./i,            // 百科
-    /wikipedia/i,
-    /weibo\.com/i,
-  ]
-  const REQUIRED_KEYWORDS = ['招标', '采购', '公告', '中标', '询价', '竞争性']
+// ── 过滤 ──────────────────────────────────────────────────────
 
+const EXCLUDE = [
+  /bing\.com/i, /google\.com/i, /baidu\.com\/link/i,
+  /zhihu\.com/i, /baike\./i, /wikipedia/i, /weibo\.com/i,
+  /taobao\.com/i, /jd\.com/i, /amazon\./i,
+]
+
+const REQUIRED_KW = ['招标', '采购', '公告', '中标', '询价', '竞争性', '遴选']
+
+export function filterResults(results) {
   return results.filter(r => {
-    if (!r.url || !r.title) return false
-    if (EXCLUDE_PATTERNS.some(p => p.test(r.url))) return false
-
-    const combined = r.title + ' ' + r.snippet
-    const hasKeyword = REQUIRED_KEYWORDS.some(kw => combined.includes(kw))
-    if (!hasKeyword) return false
-
-    return true
+    if (!r.url) return false
+    if (EXCLUDE.some(p => p.test(r.url))) return false
+    const combined = (r.title || '') + ' ' + (r.snippet || '')
+    return REQUIRED_KW.some(kw => combined.includes(kw))
   })
 }
 
-/**
- * 执行所有搜索查询并汇总结果
- * @param {object} env - { bingApiKey?: string }
- * @returns {Promise<Array<{url, title, snippet}>>}
- */
+// ── 主入口 ────────────────────────────────────────────────────
+
 export async function runSearchMode(env = {}) {
-  const allResults = []
+  const all = []
   const seen = new Set()
 
   for (const query of SEARCH_QUERIES) {
-    console.log(`  🔍 搜索: "${query}"`)
+    console.log(`  🔍 "${query}"`)
 
-    // 首选 DuckDuckGo（无需 Key）
-    let results = await searchDuckDuckGo(query)
+    let results = []
 
-    // 若配置了 Bing Key，追加结果
-    if (env.bingApiKey && results.length < 5) {
-      const bingResults = await searchBing(query, env.bingApiKey)
-      results = [...results, ...bingResults]
+    // 1. DuckDuckGo
+    const ddg = await searchDuckDuckGo(query)
+    results = [...results, ...ddg]
+
+    // 2. Bing HTML（DuckDuckGo 结果不足时补充）
+    if (results.length < 3) {
+      await sleep(1000, 2000)
+      const bing = await searchBingHTML(query)
+      results = [...results, ...bing]
     }
 
-    const filtered = filterSearchResults(results)
-    console.log(`    找到 ${filtered.length} 条相关结果`)
+    // 3. Bing API（如配置了 Key）
+    if (env.bingApiKey && results.length < 5) {
+      const bingApi = await searchBingAPI(query, env.bingApiKey)
+      results = [...results, ...bingApi]
+    }
+
+    const filtered = filterResults(results)
+    console.log(`    DDG ${ddg.length} 条 | 过滤后 ${filtered.length} 条相关`)
 
     for (const r of filtered) {
       if (!seen.has(r.url)) {
         seen.add(r.url)
-        allResults.push(r)
+        all.push(r)
       }
     }
 
-    await sleep(2000, 4000) // 搜索间隔，避免被限流
+    await sleep(2000, 4000)
   }
 
-  return allResults
+  return all
 }
