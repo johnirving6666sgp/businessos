@@ -1,20 +1,30 @@
 name: 爬虫定时任务
 
 on:
-  # 每6小时运行一次（UTC时间 0/6/12/18 点）
   schedule:
+    # Mode A+B (聚合平台+搜索引擎) — 每6小时，不受 IP 封锁影响
     - cron: '0 0,6,12,18 * * *'
-  # 支持手动触发
   workflow_dispatch:
     inputs:
+      modes:
+        description: '运行模式 (A=聚合平台, B=搜索引擎, C=机构直连)'
+        required: false
+        default: 'A,B'
+        type: choice
+        options:
+          - 'A,B'
+          - 'A,B,C'
+          - 'A'
+          - 'B'
+          - 'C'
       dry_run:
-        description: '模拟运行（不推送）'
+        description: '模拟运行（不推送到服务器）'
         required: false
         default: 'false'
         type: choice
         options: ['false', 'true']
       max_targets:
-        description: '最多处理几个目标机构（默认全部）'
+        description: 'Mode C 最多处理几个机构（默认全部）'
         required: false
         default: ''
 
@@ -37,8 +47,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 缓存爬虫状态文件，跨 run 保持已处理 URL 记录
-      - name: Restore crawler state cache
+      - name: Restore crawler state
         uses: actions/cache@v4
         with:
           path: crawler/.state.json
@@ -46,13 +55,15 @@ jobs:
           restore-keys: |
             crawler-state-
 
-      - name: Run crawler
+      - name: Run crawler (Mode A+B — 聚合平台+搜索引擎)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CRAWLER_KEY: ${{ secrets.CRAWLER_SECRET }}
           API_BASE: https://businessos.giantmedal.com
+          MODES: ${{ github.event.inputs.modes || 'A,B' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
           MAX_TARGETS: ${{ github.event.inputs.max_targets || '' }}
+          BING_API_KEY: ${{ secrets.BING_API_KEY }}
         run: node crawler/run.mjs
 
       - name: Save crawler state
@@ -61,3 +72,32 @@ jobs:
         with:
           path: crawler/.state.json
           key: crawler-state-${{ github.run_number }}
+
+  # 每周日凌晨单独跑一次 Mode C（机构直连），收集直连可以抓到的独家数据
+  crawl-direct:
+    name: 机构直连（每周）
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event_name == 'schedule' && contains(github.event.schedule, '0 0 * * 0')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run crawler (Mode C — 机构直连)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CRAWLER_KEY: ${{ secrets.CRAWLER_SECRET }}
+          API_BASE: https://businessos.giantmedal.com
+          MODES: 'C'
+          MAX_TARGETS: '35'
+        run: node crawler/run.mjs
