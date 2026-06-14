@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button.jsx'
 import {
   loadConversations, createConversation, loadMessages, sendMessage
 } from '../api/conversations.js'
+import { api } from '../api/client.js'
 
 const CONTEXT_LEVEL_LABELS = {
   0: { label: '纯净模式', color: 'text-slate-400', desc: '不引入业务上下文' },
@@ -30,6 +31,7 @@ export function Chat() {
   const messagesEndRef = useRef(null)
   const [showHistory, setShowHistory] = useState(false)
   const [loadingConv, setLoadingConv] = useState(false)
+  const [archiving, setArchiving] = useState(false)
 
   // 初始加载对话列表
   useEffect(() => {
@@ -60,6 +62,15 @@ export function Chat() {
     setShowHistory(false)
     const conv = await createConversation('personal')
     // 新对话立即激活
+  }
+
+  async function handleArchive() {
+    if (!current?.id || archiving) return
+    setArchiving(true)
+    try {
+      await api.post(`/api/memories/from-conversation/${current.id}`)
+    } catch {}
+    setArchiving(false)
   }
 
   async function handleSend(text) {
@@ -133,6 +144,16 @@ export function Chat() {
               <span className={levelInfo.color}>{levelInfo.label}</span>
             </div>
 
+            {current && messages.length > 0 && (
+              <button
+                onClick={handleArchive}
+                disabled={archiving}
+                className="text-xs text-slate-400 hover:text-violet-600 px-2 py-1 rounded hover:bg-violet-50 transition-colors"
+                title="归档到个人档案"
+              >
+                {archiving ? '归档中...' : '🗂️ 归档'}
+              </button>
+            )}
             <Button onClick={handleNewConversation} size="sm" variant="ghost" className="text-xs">
               + 新对话
             </Button>

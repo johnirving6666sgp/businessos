@@ -107,6 +107,23 @@ conversations.post('/:id/messages', requireAuth('agents'), async (c) => {
     ).bind(title, id).run()
   }
 
+  // 「拉进对话」自动记忆：仅在首次携带 entity_ref 时触发
+  if (entityRef && !conv.title) {
+    const entityLabel = entityRef.name || entityRef.id || '未知实体'
+    c.env.DB.prepare(`
+      INSERT INTO memories (user_id, type, title, content, entity_type, entity_id, entity_name, conv_id)
+      VALUES (?, 'pull_to_chat', ?, ?, ?, ?, ?, ?)
+    `).bind(
+      user.id,
+      `将「${entityLabel}」拉进对话`,
+      `用户主动将 ${entityRef.type || ''} 「${entityLabel}」带入 AI 对话，进行深度分析。`,
+      entityRef.type || null,
+      entityRef.id ? String(entityRef.id) : null,
+      entityLabel,
+      id,
+    ).run().catch(() => {}) // 非阻塞，静默失败
+  }
+
   // 准备 SSE 流式输出
   const assistantMsgId = uid('msg')
   let fullContent = ''

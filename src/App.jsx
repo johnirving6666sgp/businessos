@@ -9,6 +9,7 @@ import { Customers } from './pages/Customers.jsx'
 import { Tasks } from './pages/Tasks.jsx'
 import { Proposals } from './pages/Proposals.jsx'
 import { Knowledge } from './pages/Knowledge.jsx'
+import { Archive } from './pages/Archive.jsx'
 
 function Admin() {
   return (
@@ -28,6 +29,7 @@ const PAGES = {
   tasks: Tasks,
   proposals: Proposals,
   knowledge: Knowledge,
+  archive: Archive,
   admin: Admin,
 }
 

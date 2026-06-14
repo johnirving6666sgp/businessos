@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { id: 'tasks', icon: '✅', label: '任务', perm: 'tasks' },
   { id: 'proposals', icon: '📋', label: '方案工程师', perm: 'quote' },
   { id: 'knowledge', icon: '📚', label: '知识库', perm: 'insight' },
+  { id: 'archive',   icon: '🗂️', label: '个人档案' },
 ]
 
 const ADMIN_ITEMS = [

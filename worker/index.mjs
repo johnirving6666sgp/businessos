@@ -15,6 +15,7 @@ import broadcasts from './routes/broadcasts.mjs'
 import proposals from './routes/proposals.mjs'
 import knowledge from './routes/knowledge.mjs'
 import crawler from './routes/crawler.mjs'
+import memories from './routes/memories.mjs'
 
 const app = new Hono()
 
@@ -38,6 +39,7 @@ app.route('/api/broadcasts', broadcasts)
 app.route('/api/proposals', proposals)
 app.route('/api/knowledge', knowledge)
 app.route('/api/crawler', crawler)
+app.route('/api/memories', memories)
 
 // 健康检查
 app.get('/api/health', (c) => c.json({
