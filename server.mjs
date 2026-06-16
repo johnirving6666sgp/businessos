@@ -7,15 +7,15 @@
 
 import { serve } from '@hono/node-server'
 import Database from 'better-sqlite3'
-import { readFileSync, existsSync, mkdirSync } from 'fs'
-import { resolve, dirname } from 'path'
+import { readFileSync, existsSync, mkdirSync, readdirSync } from 'fs'
+import { resolve, dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import app from './worker/index.mjs'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = resolve(__dir, '.data')
 const DB_PATH = resolve(DATA_DIR, 'local.db')
-const MIGRATION = resolve(__dir, 'migrations/0001_init.sql')
+const MIGRATIONS_DIR = resolve(__dir, 'migrations')
 const PORT = parseInt(process.env.API_PORT || '8787')
 
 // ── 本地 SQLite D1 适配器 ─────────────────────────────────────
@@ -26,42 +26,58 @@ const sqlite = new Database(DB_PATH)
 sqlite.pragma('journal_mode = WAL')
 sqlite.pragma('foreign_keys = ON')
 
-// 运行 migration（幂等）
-if (existsSync(MIGRATION)) {
-  const sql = readFileSync(MIGRATION, 'utf-8')
-  sqlite.exec(sql)
+// 按文件名顺序运行全部 migration，每个文件只执行一次（用 _migrations 表追踪）。
+// 这样本地 schema 与生产保持一致，且 ALTER TABLE 不会因重复执行而报错。
+function runMigrations(db, dir) {
+  db.exec(`CREATE TABLE IF NOT EXISTS _migrations (
+    name TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`)
+  const applied = new Set(db.prepare('SELECT name FROM _migrations').all().map(r => r.name))
+  const files = readdirSync(dir).filter(f => f.endsWith('.sql')).sort()
+
+  for (const file of files) {
+    if (applied.has(file)) continue
+    const sql = readFileSync(join(dir, file), 'utf-8')
+    try {
+      db.exec(sql)
+      db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(file)
+      console.log(`   ✅ migration: ${file}`)
+    } catch (err) {
+      console.error(`   ❌ migration ${file} 失败: ${err.message}`)
+      throw err
+    }
+  }
 }
+
+runMigrations(sqlite, MIGRATIONS_DIR)
 
 /**
  * D1 兼容层：把 better-sqlite3 的同步接口包成 D1 的异步 promise 接口
  */
 function makeD1Compat(db) {
-  function wrapResult(stmt, args = []) {
-    const bound = stmt.bind ? stmt : db.prepare(stmt)
-    return {
-      first: () => Promise.resolve(bound.get(...args) || null),
-      all: () => Promise.resolve({ results: bound.all(...args) }),
-      run: () => Promise.resolve(bound.run(...args)),
-    }
-  }
+  // 把 better-sqlite3 的 run() 结果包装成 D1 的形状，
+  // 让 result.meta.last_row_id / result.meta.changes 在本地也能用。
+  const wrapRun = (r) => ({
+    success: true,
+    meta: { last_row_id: r.lastInsertRowid, changes: r.changes },
+    results: [],
+  })
 
   return {
     prepare(sql) {
       const stmt = db.prepare(sql)
-      const boundArgs = []
       return {
         bind(...args) {
-          // better-sqlite3 使用位置参数
-          const boundStmt = db.prepare(sql)
           return {
-            first: () => Promise.resolve(boundStmt.get(...args) || null),
-            all: () => Promise.resolve({ results: boundStmt.all(...args) }),
-            run: () => Promise.resolve(boundStmt.run(...args)),
+            first: () => Promise.resolve(stmt.get(...args) || null),
+            all: () => Promise.resolve({ results: stmt.all(...args) }),
+            run: () => Promise.resolve(wrapRun(stmt.run(...args))),
           }
         },
         first: () => Promise.resolve(stmt.get() || null),
         all: () => Promise.resolve({ results: stmt.all() }),
-        run: () => Promise.resolve(stmt.run()),
+        run: () => Promise.resolve(wrapRun(stmt.run())),
       }
     },
     exec(sql) {
@@ -80,7 +96,7 @@ const localEnv = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   OPENROUTER_BACKUP_API_KEY: process.env.OPENROUTER_BACKUP_API_KEY,
-  CRAWLER_API_KEY: process.env.CRAWLER_API_KEY,
+  CRAWLER_SECRET: process.env.CRAWLER_SECRET || process.env.CRAWLER_API_KEY,
   APP_NAME: 'BusinessOS',
   APP_VERSION: '2.0.0',
 }
