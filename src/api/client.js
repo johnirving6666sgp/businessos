@@ -1,20 +1,14 @@
 /**
  * API 客户端
- * token 从 localStorage 读取，以 Authorization: Bearer 发送
- * 同时带 credentials: 'include' 保留 cookie 作为备用
+ * 会话完全依赖 HttpOnly cookie（credentials: 'include'）。
+ * 前端不再持有/发送 token，避免 XSS 窃取。
  */
 
 const BASE = ''
 
-function getToken() {
-  return localStorage.getItem('bos_token') || ''
-}
-
 async function request(path, options = {}) {
-  const token = getToken()
   const headers = {
     'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   }
 

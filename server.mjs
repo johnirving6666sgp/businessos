@@ -91,7 +91,6 @@ function makeD1Compat(db) {
 const localEnv = {
   DB: makeD1Compat(sqlite),
   ASSETS: null,
-  SESSION_SECRET: process.env.SESSION_SECRET || 'local-dev-secret-change-in-production',
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,

@@ -16,7 +16,7 @@ export function Login() {
     setLoading(true)
     try {
       const data = await api.post('/api/auth/login', { username, password })
-      setAuth({ user: data.user, permissions: data.user.permissions || {}, token: data.token, agent: null })
+      setAuth({ user: data.user, permissions: data.user.permissions || {}, agent: null })
     } catch (err) {
       setError(err.message || '登录失败')
     } finally {

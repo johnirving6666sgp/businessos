@@ -18,5 +18,5 @@
     "APP_NAME": "BusinessOS",
     "APP_VERSION": "2.0.0"
   },
-  "secrets": ["ANTHROPIC_API_KEY", "CRAWLER_SECRET", "SESSION_SECRET"]
+  "secrets": ["ANTHROPIC_API_KEY", "CRAWLER_SECRET"]
 }
