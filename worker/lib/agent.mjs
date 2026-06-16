@@ -205,6 +205,11 @@ export async function buildSystemPrompt({ user, contextLevel, db, entityRef, las
   lines.push(`3. 销售场景下，帮用户找到推进成单的最短路径`)
   lines.push(`4. 如有明确的下一步行动，在回答末尾列出（最多3条）`)
 
+  // 静态身份/公司背景到此结束。它在同一用户的所有对话中字节一致，
+  // 适合作为 Anthropic prompt caching 的缓存前缀；后续 Level 1-3 为动态部分。
+  const staticPrompt = lines.join('\n')
+  const staticLineCount = lines.length
+
   // ── Level 1：当前工作状态 ──────────────────────────────────
   if (contextLevel >= 1) {
     try {
@@ -396,7 +401,10 @@ export async function buildSystemPrompt({ user, contextLevel, db, entityRef, las
     } catch (e) { /* 知识库加载失败不阻断 */ }
   }
 
-  return lines.join('\n')
+  return {
+    static: staticPrompt,
+    dynamic: lines.slice(staticLineCount).join('\n'),
+  }
 }
 
 /**

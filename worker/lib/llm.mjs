@@ -20,38 +20,58 @@ export function resolveModel(modelTier) {
 /**
  * 流式聊天（SSE）
  * @param {object} env - CF Worker env bindings
- * @param {string} model - 模型 tier ('opus' | 'sonnet' | 'haiku')
- * @param {string} systemPrompt
+ * @param {string} modelTier - 模型 tier ('opus' | 'sonnet' | 'haiku')
+ * @param {{static: string, dynamic: string}|string} system - 系统提示词。
+ *        对象形式时 static 段会被标记为可缓存前缀（Anthropic prompt caching）。
  * @param {Array} messages - [{role, content}]
  * @returns {ReadableStream} SSE 流
  */
-export function streamChat({ env, modelTier, systemPrompt, messages }) {
+export function streamChat({ env, modelTier, system, messages }) {
   const model = resolveModel(modelTier)
+  // 归一化：兼容旧的纯字符串调用
+  const sys = typeof system === 'string'
+    ? { static: system, dynamic: '' }
+    : { static: system?.static || '', dynamic: system?.dynamic || '' }
 
   // 优先 Anthropic 直连
   if (env.ANTHROPIC_API_KEY) {
-    return streamAnthropic({ apiKey: env.ANTHROPIC_API_KEY, model, systemPrompt, messages })
+    return streamAnthropic({ apiKey: env.ANTHROPIC_API_KEY, model, system: sys, messages })
   }
   // 备用 OpenRouter
   if (env.OPENROUTER_API_KEY) {
-    return streamOpenRouter({ apiKey: env.OPENROUTER_API_KEY, model, systemPrompt, messages })
+    return streamOpenRouter({ apiKey: env.OPENROUTER_API_KEY, model, system: sys, messages })
   }
   // 最后备用 OpenAI
   if (env.OPENAI_API_KEY) {
-    return streamOpenAI({ apiKey: env.OPENAI_API_KEY, systemPrompt, messages })
+    return streamOpenAI({ apiKey: env.OPENAI_API_KEY, system: sys, messages })
   }
 
   throw new Error('未配置任何 LLM API Key')
 }
 
+/** 把 {static, dynamic} 合并成单条 system 字符串（用于不支持分块缓存的后端）*/
+function flattenSystem(sys) {
+  return [sys.static, sys.dynamic].filter(Boolean).join('\n')
+}
+
 // ── Anthropic ──────────────────────────────────────────────────
 
-function streamAnthropic({ apiKey, model, systemPrompt, messages }) {
+function streamAnthropic({ apiKey, model, system, messages }) {
+  // 把静态身份/公司背景作为可缓存前缀（ephemeral，约 5 分钟 TTL）。
+  // 命中后这部分输入按缓存读取计费，成本约为常规的 1/10。
+  const systemBlocks = []
+  if (system.static) {
+    systemBlocks.push({ type: 'text', text: system.static, cache_control: { type: 'ephemeral' } })
+  }
+  if (system.dynamic) {
+    systemBlocks.push({ type: 'text', text: system.dynamic })
+  }
+
   const body = JSON.stringify({
     model,
     max_tokens: 4096,
     stream: true,
-    system: systemPrompt,
+    system: systemBlocks.length ? systemBlocks : flattenSystem(system),
     messages: messages.map(m => ({ role: m.role, content: m.content })),
   })
 
@@ -113,8 +133,8 @@ function streamAnthropic({ apiKey, model, systemPrompt, messages }) {
 
 // ── OpenRouter ────────────────────────────────────────────────
 
-function streamOpenRouter({ apiKey, model, systemPrompt, messages }) {
-  const msgs = [{ role: 'system', content: systemPrompt }, ...messages]
+function streamOpenRouter({ apiKey, model, system, messages }) {
+  const msgs = [{ role: 'system', content: flattenSystem(system) }, ...messages]
   const body = JSON.stringify({ model: `anthropic/${model}`, stream: true, messages: msgs })
 
   return new ReadableStream({
@@ -168,8 +188,8 @@ function streamOpenRouter({ apiKey, model, systemPrompt, messages }) {
 
 // ── OpenAI ────────────────────────────────────────────────────
 
-function streamOpenAI({ apiKey, systemPrompt, messages }) {
-  const msgs = [{ role: 'system', content: systemPrompt }, ...messages]
+function streamOpenAI({ apiKey, system, messages }) {
+  const msgs = [{ role: 'system', content: flattenSystem(system) }, ...messages]
   const body = JSON.stringify({ model: 'gpt-4o', stream: true, messages: msgs })
 
   return new ReadableStream({
