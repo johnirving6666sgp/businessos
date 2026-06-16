@@ -13,7 +13,7 @@ function renderMarkdown(text) {
     .replace(/^#{3}\s(.+)$/gm, '<h3>$1</h3>')
     .replace(/^#{2}\s(.+)$/gm, '<h2>$1</h2>')
     .replace(/^#{1}\s(.+)$/gm, '<h1>$1</h1>')
-    .replace(/^\-\s(.+)$/gm, '<li>$1</li>')
+    .replace(/^-\s(.+)$/gm, '<li>$1</li>')
     .replace(/(<li>[\s\S]+?<\/li>)/g, '<ul>$1</ul>')
     .replace(/\n\n/g, '</p><p>')
     .replace(/^(?!<[h|u|p|l|p])/gm, '')
@@ -38,7 +38,7 @@ function formatContent(content) {
     // 标题
     if (/^#{1,3}\s/.test(p)) return p
     // 列表
-    if (/^[\-\*]\s/.test(p)) return p
+    if (/^[-*]\s/.test(p)) return p
     // 普通段落
     return `<p>${p}</p>`
   }).join('\n')

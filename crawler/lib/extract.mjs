@@ -140,7 +140,7 @@ export function mapToOpportunity(extracted, sourceUrl, targetName) {
 function parseDate(str) {
   if (!str) return null
   // 尝试解析 YYYY-MM-DD 格式
-  const match = str.match(/(\d{4})[年\-\/](\d{1,2})[月\-\/](\d{1,2})/)
+  const match = str.match(/(\d{4})[年/-](\d{1,2})[月/-](\d{1,2})/)
   if (match) {
     const [, y, m, d] = match
     return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
