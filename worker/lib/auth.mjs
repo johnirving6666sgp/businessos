@@ -101,10 +101,16 @@ export function safeJSON(str, fallback = {}) {
   try { return JSON.parse(str) } catch { return fallback }
 }
 
+function isHttps(c) {
+  try { return new URL(c.req.url).protocol === 'https:' } catch { return false }
+}
+
 export function setSessionCookie(c, token) {
-  c.header('Set-Cookie', `bos_token=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_DAYS * 86400}`)
+  const secure = isHttps(c) ? '; Secure' : ''
+  c.header('Set-Cookie', `bos_token=${token}; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=${SESSION_TTL_DAYS * 86400}`)
 }
 
 export function clearSessionCookie(c) {
-  c.header('Set-Cookie', 'bos_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0')
+  const secure = isHttps(c) ? '; Secure' : ''
+  c.header('Set-Cookie', `bos_token=; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=0`)
 }

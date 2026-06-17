@@ -8,7 +8,7 @@
  *
  * 环境变量：
  *   ANTHROPIC_API_KEY  - 必填，Claude Haiku 提取
- *   CRAWLER_KEY        - 必填（DRY_RUN=true 时可省）
+ *   CRAWLER_SECRET     - 必填（DRY_RUN=true 时可省）。兼容旧名 CRAWLER_KEY
  *   API_BASE           - 默认 https://businessos.giantmedal.com
  *   DRY_RUN            - "true" 只打印，不推送
  *   MODES              - 逗号分隔，默认 "A,B,C"，如 "A,B" 跳过直连
@@ -27,7 +27,7 @@ import { loadState, saveState, isSeen, markSeen, updateStats, printStats } from 
 
 // ── 配置 ──────────────────────────────────────────────────────
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
-const CRAWLER_KEY   = process.env.CRAWLER_KEY
+const CRAWLER_KEY   = process.env.CRAWLER_SECRET || process.env.CRAWLER_KEY
 const API_BASE      = process.env.API_BASE || 'https://businessos.giantmedal.com'
 const DRY_RUN       = process.env.DRY_RUN === 'true'
 const MODES         = (process.env.MODES || 'A,B,C').split(',').map(m => m.trim().toUpperCase())
@@ -35,7 +35,7 @@ const MAX_TARGETS   = parseInt(process.env.MAX_TARGETS || '999')
 const BING_KEY      = process.env.BING_API_KEY || null
 
 if (!ANTHROPIC_KEY) { console.error('❌ 缺少 ANTHROPIC_API_KEY'); process.exit(1) }
-if (!CRAWLER_KEY && !DRY_RUN) { console.error('❌ 缺少 CRAWLER_KEY（或设 DRY_RUN=true）'); process.exit(1) }
+if (!CRAWLER_KEY && !DRY_RUN) { console.error('❌ 缺少 CRAWLER_SECRET（或设 DRY_RUN=true）'); process.exit(1) }
 
 // ── 启动预检：验证 Anthropic API Key ──────────────────────────
 async function validateAnthropicKey(key) {
@@ -48,7 +48,7 @@ async function validateAnthropicKey(key) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 10,
         messages: [{ role: 'user', content: 'hi' }],
       }),

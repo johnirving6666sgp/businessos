@@ -10,16 +10,7 @@ import { Tasks } from './pages/Tasks.jsx'
 import { Proposals } from './pages/Proposals.jsx'
 import { Knowledge } from './pages/Knowledge.jsx'
 import { Archive } from './pages/Archive.jsx'
-
-function Admin() {
-  return (
-    <div className="flex flex-col items-center justify-center h-full py-20 text-slate-400">
-      <div className="text-5xl mb-4">⚙️</div>
-      <h2 className="text-xl font-semibold text-slate-600 mb-1">Jamie Central</h2>
-      <p className="text-sm">管理面板正在开发中</p>
-    </div>
-  )
-}
+import { Admin } from './pages/Admin.jsx'
 
 const PAGES = {
   dashboard: Dashboard,

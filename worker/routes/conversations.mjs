@@ -84,7 +84,7 @@ conversations.post('/:id/messages', requireAuth('agents'), async (c) => {
   // 检测上下文级别
   const contextLevel = body.context_level ?? detectContextLevel(messages)
 
-  // 构建 system prompt
+  // 构建 system prompt（{static, dynamic}，static 段用于 prompt caching）
   const entityRef = body.entity_ref || null
   const systemPrompt = await buildSystemPrompt({
     user,
@@ -131,7 +131,7 @@ conversations.post('/:id/messages', requireAuth('agents'), async (c) => {
   const llmStream = streamChat({
     env: c.env,
     modelTier: user.model_tier,
-    systemPrompt,
+    system: systemPrompt,
     messages,
   })
 
@@ -193,7 +193,10 @@ conversations.post('/:id/messages', requireAuth('agents'), async (c) => {
     }
   }
 
-  processStream()
+  // 用 waitUntil 保活：即使客户端提前断开，也要等流处理完成（含把 AI 回复写库），
+  // 避免 Worker 在持久化之前被回收导致回复丢失。本地 node 无 executionCtx，直接调用。
+  const streamDone = processStream()
+  if (c.executionCtx?.waitUntil) c.executionCtx.waitUntil(streamDone)
 
   return new Response(readable, {
     headers: {

@@ -1,22 +1,18 @@
 import { create } from 'zustand'
 
-const TOKEN_KEY = 'bos_token'
-
 export const useAuthStore = create((set, get) => ({
   user: null,
   permissions: {},
   agent: null,
-  token: localStorage.getItem(TOKEN_KEY) || null,
   loading: true,
 
-  setAuth: ({ user, permissions, agent, token }) => {
-    if (token) localStorage.setItem(TOKEN_KEY, token)
-    set({ user, permissions: permissions || {}, agent, token })
+  // 会话依赖 HttpOnly cookie，前端不再保存 token
+  setAuth: ({ user, permissions, agent }) => {
+    set({ user, permissions: permissions || {}, agent })
   },
 
   clearAuth: () => {
-    localStorage.removeItem(TOKEN_KEY)
-    set({ user: null, permissions: {}, agent: null, token: null })
+    set({ user: null, permissions: {}, agent: null })
   },
 
   setLoading: (loading) => set({ loading }),
@@ -33,26 +29,16 @@ export const useAuthStore = create((set, get) => ({
     return user?.role === 'super_admin' || user?.role === 'admin'
   },
 
-  // 启动时从已存 token 恢复会话
+  // 启动时用 cookie 校验会话（/me 命中则恢复，未登录返回 401）
   init: async () => {
-    const { token } = get()
-    if (!token) {
-      set({ loading: false })
-      return
-    }
     set({ loading: true })
     try {
-      const res = await fetch('/api/auth/me', {
-        credentials: 'include',
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await fetch('/api/auth/me', { credentials: 'include' })
       if (res.ok) {
         const data = await res.json()
         set({ user: data.user, permissions: data.permissions || {}, agent: data.agent })
       } else {
-        // Token 失效，清除
-        localStorage.removeItem(TOKEN_KEY)
-        set({ user: null, token: null })
+        set({ user: null, permissions: {}, agent: null })
       }
     } catch {
       set({ user: null })

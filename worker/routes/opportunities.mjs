@@ -104,11 +104,11 @@ opportunities.post('/:id/save', requireAuth(), async (c) => {
   return c.json({ ok: true })
 })
 
-// POST /api/opportunities/import — 爬虫批量导入（需要 CRAWLER_API_KEY）
+// POST /api/opportunities/import — 爬虫批量导入（需要 CRAWLER_SECRET）
 opportunities.post('/import', async (c) => {
   const authHeader = c.req.header('authorization') || ''
   const key = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
-  if (!c.env.CRAWLER_API_KEY || key !== c.env.CRAWLER_API_KEY) {
+  if (!c.env.CRAWLER_SECRET || key !== c.env.CRAWLER_SECRET) {
     return c.json({ error: 'Unauthorized' }, 401)
   }
 

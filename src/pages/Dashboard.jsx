@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '../store/auth.js'
+import { useUIStore } from '../store/ui.js'
 import { api } from '../api/client.js'
 import { StageBadge } from '../components/ui/Badge.jsx'
 import { Button } from '../components/ui/Button.jsx'
@@ -12,15 +13,24 @@ const STAGE_LABELS = {
 export function Dashboard({ onNavigate }) {
   const user = useAuthStore(s => s.user)
   const agent = useAuthStore(s => s.agent)
+  const isAdmin = useAuthStore(s => s.isAdmin)
+  const can = useAuthStore(s => s.can)
+  const toast = useUIStore(s => s.toast)
   const [data, setData] = useState({ urgent_tasks: [], stale_customers: [], hot_opportunities: [], pending_broadcasts: [] })
   const [loading, setLoading] = useState(true)
+  const [showCompose, setShowCompose] = useState(false)
+  const [respondTo, setRespondTo] = useState(null)
 
-  useEffect(() => {
-    api.get('/api/tasks/dashboard')
+  const canBroadcast = isAdmin() || can('broadcast')
+
+  function loadDashboard() {
+    return api.get('/api/tasks/dashboard')
       .then(d => setData(d))
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }
+
+  useEffect(() => { loadDashboard() }, [])
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好'
@@ -40,9 +50,16 @@ export function Dashboard({ onNavigate }) {
             </p>
           )}
         </div>
-        <Button onClick={() => onNavigate('chat')} variant="agent" size="sm" icon="💬">
-          与 AI 对话
-        </Button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {canBroadcast && (
+            <Button onClick={() => setShowCompose(true)} variant="secondary" size="sm" icon="📢">
+              发广播
+            </Button>
+          )}
+          <Button onClick={() => onNavigate('chat')} variant="agent" size="sm" icon="💬">
+            与 AI 对话
+          </Button>
+        </div>
       </div>
 
       {loading && <LoadingSkeleton />}
@@ -130,7 +147,7 @@ export function Dashboard({ onNavigate }) {
                 <p className="text-sm font-medium text-slate-800 truncate">{b.title}</p>
                 <p className="text-xs text-slate-400 mt-0.5">{b.creator_name} 发布</p>
               </div>
-              <Button size="sm" variant="secondary">回复</Button>
+              <Button size="sm" variant="secondary" onClick={() => setRespondTo(b)}>回复</Button>
             </div>
           ))}
         </Section>
@@ -152,7 +169,202 @@ export function Dashboard({ onNavigate }) {
           <Button onClick={() => onNavigate('chat')} size="sm" variant="agent">开始对话</Button>
         </div>
       </div>
+
+      {/* 发广播 */}
+      {showCompose && (
+        <BroadcastComposer
+          toast={toast}
+          onClose={() => setShowCompose(false)}
+          onSent={() => { setShowCompose(false); loadDashboard() }}
+        />
+      )}
+
+      {/* 回复广播 */}
+      {respondTo && (
+        <BroadcastRespond
+          broadcast={respondTo}
+          toast={toast}
+          onClose={() => setRespondTo(null)}
+          onDone={() => { setRespondTo(null); loadDashboard() }}
+        />
+      )}
     </div>
+  )
+}
+
+const INPUT_CLS = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-400 transition-colors'
+
+function ModalShell({ title, onClose, children }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white w-full md:max-w-md rounded-t-2xl md:rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white flex items-center justify-between px-4 py-3 border-b border-slate-100 z-10">
+          <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function BroadcastComposer({ toast, onClose, onSent }) {
+  const [recipients, setRecipients] = useState([])
+  const [selected, setSelected] = useState(() => new Set())
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [sending, setSending] = useState(false)
+
+  useEffect(() => {
+    api.get('/api/broadcasts/recipients')
+      .then(d => setRecipients(d.recipients || []))
+      .catch(e => toast(e.message || '加载成员失败', 'error'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  function toggle(id) {
+    setSelected(s => {
+      const n = new Set(s)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  }
+  const allSelected = recipients.length > 0 && selected.size === recipients.length
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(recipients.map(r => r.id)))
+  }
+
+  async function submit() {
+    if (!title.trim() || !content.trim()) return toast('标题和内容必填', 'error')
+    if (selected.size === 0) return toast('请至少选择一个接收人', 'error')
+    setSending(true)
+    try {
+      await api.post('/api/broadcasts', {
+        title: title.trim(),
+        content: content.trim(),
+        target_user_ids: [...selected],
+      })
+      toast('广播已发送', 'success')
+      onSent()
+    } catch (e) {
+      toast(e.message || '发送失败', 'error')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <ModalShell title="发广播" onClose={onClose}>
+      <div className="p-4 space-y-3">
+        <input
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="广播标题"
+          maxLength={80}
+          className={INPUT_CLS}
+        />
+        <textarea
+          value={content}
+          onChange={e => setContent(e.target.value)}
+          placeholder="广播内容…"
+          rows={4}
+          className={`${INPUT_CLS} resize-none`}
+        />
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-slate-400">接收人（{selected.size}/{recipients.length}）</span>
+            {recipients.length > 0 && (
+              <button onClick={toggleAll} className="text-xs text-blue-500 hover:text-blue-700">
+                {allSelected ? '清空' : '全选'}
+              </button>
+            )}
+          </div>
+          {loading ? (
+            <div className="py-4 flex justify-center">
+              <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : recipients.length === 0 ? (
+            <p className="text-xs text-slate-400 py-2">暂无其他可接收的成员</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {recipients.map(r => {
+                const on = selected.has(r.id)
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => toggle(r.id)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                      on
+                        ? 'bg-blue-50 border-blue-200 text-blue-700'
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    {on ? '✓ ' : ''}{r.display_name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="px-4 py-3 border-t border-slate-100 flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>取消</Button>
+        <Button size="sm" loading={sending} onClick={submit} icon="📢">发送</Button>
+      </div>
+    </ModalShell>
+  )
+}
+
+const RESPOND_STATUSES = [
+  { id: 'received', label: '收到' },
+  { id: 'following_up', label: '跟进中' },
+  { id: 'need_discussion', label: '需讨论' },
+]
+
+function BroadcastRespond({ broadcast, toast, onClose, onDone }) {
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function respond(status) {
+    setBusy(true)
+    try {
+      await api.post(`/api/broadcasts/${broadcast.id}/respond`, { status, note: note.trim() || null })
+      toast('已回复', 'success')
+      onDone()
+    } catch (e) {
+      toast(e.message || '回复失败', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <ModalShell title="回复广播" onClose={onClose}>
+      <div className="p-4 space-y-3">
+        <div>
+          <p className="text-sm font-medium text-slate-800">{broadcast.title}</p>
+          <p className="text-xs text-slate-400 mt-0.5">{broadcast.creator_name} 发布</p>
+        </div>
+        <textarea
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          placeholder="补充说明（可选）"
+          rows={3}
+          className={`${INPUT_CLS} resize-none`}
+        />
+        <div className="grid grid-cols-3 gap-2">
+          {RESPOND_STATUSES.map(s => (
+            <Button key={s.id} variant="secondary" size="sm" disabled={busy} onClick={() => respond(s.id)}>
+              {s.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    </ModalShell>
   )
 }
 

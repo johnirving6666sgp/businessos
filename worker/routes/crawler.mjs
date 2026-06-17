@@ -4,6 +4,7 @@
  */
 
 import { Hono } from 'hono'
+import { uid } from '../lib/auth.mjs'
 
 const crawler = new Hono()
 
@@ -55,28 +56,36 @@ crawler.post('/opportunities', async (c) => {
     return c.json({ ok: true, id: existing.id, duplicate: true }, 200)
   }
 
-  // 插入新线索
-  // 注意：opportunities 表可能没有所有这些字段，只写已有字段
-  const result = await db.prepare(`
+  // 映射到 opportunities 表的规范列（前端/Agent 实际读取的字段）
+  // institution → org_name, contact → contact_info, summary/参数 → raw_content
+  const rawContent = [
+    summary,
+    equipment_type ? `设备类型：${equipment_type}` : null,
+    specs ? `关键参数：${specs}` : null,
+  ].filter(Boolean).join('\n')
+
+  const id = uid('opp')
+  await db.prepare(`
     INSERT INTO opportunities
-      (title, institution, source_url, budget, deadline, equipment_type, specs,
-       contact, summary, relevance_score, crawled_at, stage, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', 'crawler')
+      (id, title, source_platform, source, source_url, raw_content, org_name,
+       budget, deadline, contact_info, keywords, status, fetch_quality,
+       relevance_score, crawled_at)
+    VALUES (?, ?, 'crawler', 'crawler', ?, ?, ?, ?, ?, ?, ?, 'pending', 'partial', ?, ?)
   `).bind(
+    id,
     title,
-    institution || null,
     source_url,
+    rawContent || null,
+    institution || null,
     budget || null,
     deadline || null,
-    equipment_type || null,
-    specs || null,
     contact || null,
-    summary || null,
+    JSON.stringify(equipment_type ? [equipment_type] : []),
     relevance_score || 50,
     crawled_at || new Date().toISOString(),
   ).run()
 
-  return c.json({ ok: true, id: result.meta?.last_row_id }, 201)
+  return c.json({ ok: true, id }, 201)
 })
 
 // ── GET /api/crawler/check ────────────────────────────────────
@@ -106,7 +115,7 @@ crawler.get('/stats', async (c) => {
   ).first()
 
   const latest = await db.prepare(
-    "SELECT title, institution, crawled_at FROM opportunities WHERE source = 'crawler' ORDER BY crawled_at DESC LIMIT 5"
+    "SELECT title, org_name AS institution, crawled_at FROM opportunities WHERE source = 'crawler' ORDER BY crawled_at DESC LIMIT 5"
   ).all()
 
   return c.json({

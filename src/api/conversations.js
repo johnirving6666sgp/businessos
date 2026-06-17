@@ -39,14 +39,10 @@ export async function sendMessage(convId, content, options = {}) {
   store.startStream()
 
   try {
-    const token = localStorage.getItem('bos_token') || ''
     const res = await fetch(`/api/conversations/${convId}/messages`, {
       method: 'POST',
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content, ...options }),
     })
 
