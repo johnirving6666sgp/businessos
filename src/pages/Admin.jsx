@@ -3,6 +3,7 @@ import { api } from '../api/client.js'
 import { useAuthStore } from '../store/auth.js'
 import { useUIStore } from '../store/ui.js'
 import { Badge } from '../components/ui/Badge.jsx'
+import { Icon } from '../components/ui/Icon.jsx'
 
 const MODELS = [
   { id: 'opus', label: 'Opus', hint: '最强' },
@@ -32,7 +33,7 @@ export function Admin() {
 
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState({})   // { [userId]: true } 请求进行中
+  const [busy, setBusy] = useState({})
 
   async function load() {
     setLoading(true)
@@ -48,7 +49,6 @@ export function Admin() {
 
   useEffect(() => { load() }, [])
 
-  // 乐观更新：先改本地，请求失败再回滚
   async function patch(userId, apply, req, okMsg) {
     const prev = users
     setUsers(list => list.map(u => (u.id === userId ? apply(u) : u)))
@@ -57,7 +57,7 @@ export function Admin() {
       await req()
       if (okMsg) toast(okMsg, 'success')
     } catch (e) {
-      setUsers(prev) // 回滚
+      setUsers(prev)
       toast(e.message || '操作失败', 'error')
     } finally {
       setBusy(b => ({ ...b, [userId]: false }))
@@ -94,7 +94,6 @@ export function Admin() {
     )
   }
 
-  // ── 概览统计 ──────────────────────────────────────────────
   const stats = {
     total: users.length,
     active: users.filter(u => u.is_active).length,
@@ -113,19 +112,19 @@ export function Admin() {
   return (
     <div className="h-full overflow-y-auto bg-slate-50">
       <div className="max-w-5xl mx-auto px-4 py-4 md:px-6 md:py-6">
-        {/* 头部 */}
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-xl">⚙️</span>
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-10 h-10 rounded-2xl bg-violet-100 text-violet-600 flex items-center justify-center">
+            <Icon name="settings" size={20} />
+          </div>
           <h1 className="text-lg font-bold text-slate-800">Jamie Central</h1>
         </div>
-        <p className="text-xs text-slate-400 mb-5">用户与权限管理 · 仅管理员可见</p>
+        <p className="text-xs text-slate-400 mb-5 ml-[52px]">成员与权限管理 · 仅管理员可见</p>
 
-        {/* 概览卡片 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <StatCard label="团队成员" value={stats.total} />
           <StatCard label="启用中" value={stats.active} accent="green" />
           <StatCard label="方案训练授权" value={stats.training} accent="violet" />
-          <div className="bg-white rounded-xl border border-slate-100 px-4 py-3 shadow-sm">
+          <div className="bg-white rounded-2xl border border-slate-100 px-4 py-3 shadow-sm">
             <div className="text-xs text-slate-400 mb-1.5">模型分布</div>
             <div className="flex flex-wrap gap-1">
               {stats.models.map(m => (
@@ -137,7 +136,6 @@ export function Admin() {
           </div>
         </div>
 
-        {/* 用户列表 */}
         <h2 className="text-sm font-semibold text-slate-700 mb-3">团队成员</h2>
         <div className="space-y-3">
           {users.map(user => (
@@ -160,7 +158,7 @@ export function Admin() {
 function StatCard({ label, value, accent }) {
   const color = accent === 'green' ? 'text-green-600' : accent === 'violet' ? 'text-violet-600' : 'text-slate-800'
   return (
-    <div className="bg-white rounded-xl border border-slate-100 px-4 py-3 shadow-sm">
+    <div className="bg-white rounded-2xl border border-slate-100 px-4 py-3 shadow-sm">
       <div className="text-xs text-slate-400 mb-1">{label}</div>
       <div className={`text-2xl font-bold ${color}`}>{value}</div>
     </div>
@@ -172,10 +170,9 @@ function UserCard({ user, isSelf, busy, onTogglePerm, onSetModel, onToggleActive
   const inactive = !user.is_active
 
   return (
-    <div className={`bg-white rounded-xl border shadow-sm p-4 transition-opacity ${inactive ? 'border-slate-100 opacity-60' : 'border-slate-100'}`}>
-      {/* 顶部：身份 + 启停 */}
+    <div className={`bg-white rounded-2xl border shadow-sm p-4 transition-opacity ${inactive ? 'border-slate-100 opacity-60' : 'border-slate-100'}`}>
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-violet-500 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+        <div className="w-9 h-9 rounded-full bg-violet-500 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
           {user.display_name?.[0] || '?'}
         </div>
         <div className="min-w-0 flex-1">
@@ -190,17 +187,14 @@ function UserCard({ user, isSelf, busy, onTogglePerm, onSetModel, onToggleActive
           onClick={() => onToggleActive(user)}
           disabled={busy || isSelf}
           title={isSelf ? '不能停用自己的账号' : ''}
-          className={`text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-            inactive
-              ? 'border-green-200 text-green-700 hover:bg-green-50'
-              : 'border-red-200 text-red-600 hover:bg-red-50'
+          className={`text-xs px-3 py-1 rounded-full border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+            inactive ? 'border-green-200 text-green-700 hover:bg-green-50' : 'border-red-200 text-red-600 hover:bg-red-50'
           }`}
         >
           {inactive ? '启用' : '停用'}
         </button>
       </div>
 
-      {/* 模型档位 */}
       <div className="mt-3.5 flex items-center gap-2 flex-wrap">
         <span className="text-xs text-slate-400 w-12 flex-shrink-0">模型</span>
         <div className="flex gap-1">
@@ -209,10 +203,8 @@ function UserCard({ user, isSelf, busy, onTogglePerm, onSetModel, onToggleActive
               key={m.id}
               onClick={() => onSetModel(user, m.id)}
               disabled={busy}
-              className={`text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-50 ${
-                user.model_tier === m.id
-                  ? 'bg-blue-500 border-blue-500 text-white'
-                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-50 ${
+                user.model_tier === m.id ? 'bg-blue-500 border-blue-500 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
               title={m.hint}
             >
@@ -222,7 +214,6 @@ function UserCard({ user, isSelf, busy, onTogglePerm, onSetModel, onToggleActive
         </div>
       </div>
 
-      {/* 权限 */}
       <div className="mt-2.5 flex items-start gap-2 flex-wrap">
         <span className="text-xs text-slate-400 w-12 flex-shrink-0 pt-1">权限</span>
         <div className="flex gap-1.5 flex-wrap flex-1">
@@ -233,13 +224,11 @@ function UserCard({ user, isSelf, busy, onTogglePerm, onSetModel, onToggleActive
                 key={p.key}
                 onClick={() => onTogglePerm(user, p.key)}
                 disabled={busy}
-                className={`text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-50 ${
-                  on
-                    ? 'bg-blue-50 border-blue-200 text-blue-700'
-                    : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'
+                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-50 ${
+                  on ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'
                 }`}
               >
-                {on ? '✓ ' : ''}{p.label}
+                {on && <Icon name="circle-check" size={12} />}{p.label}
               </button>
             )
           })}
