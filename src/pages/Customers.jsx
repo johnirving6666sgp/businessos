@@ -5,6 +5,7 @@ import { useConversationsStore } from '../store/conversations.js'
 import { createConversation } from '../api/conversations.js'
 import { StageBadge, STAGE_META } from '../components/ui/Badge.jsx'
 import { Button } from '../components/ui/Button.jsx'
+import { Icon } from '../components/ui/Icon.jsx'
 
 const STAGES = ['untouched', 'contacted', 'interested', 'quoting', 'closing', 'won', 'lost']
 
@@ -13,7 +14,7 @@ export function Customers({ onNavigate }) {
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
-  const [view, setView] = useState('kanban') // 'kanban' | 'list'
+  const [view, setView] = useState('kanban')
   const [showAdd, setShowAdd] = useState(false)
 
   async function load() {
@@ -36,28 +37,32 @@ export function Customers({ onNavigate }) {
     toast('阶段已更新', 'success')
   }
 
-  // 按阶段分组（排除已成交/流失）
   const grouped = STAGES.reduce((acc, stage) => {
     acc[stage] = customers.filter(c => c.stage === stage)
     return acc
   }, {})
 
   const activeStages = STAGES.filter(s => s !== 'won' && s !== 'lost')
+  const activeCount = customers.filter(c => !['won', 'lost'].includes(c.stage)).length
 
   return (
     <div className="flex flex-col h-full">
-      {/* 头部 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-white flex-shrink-0">
-        <div>
-          <h1 className="text-lg font-bold text-slate-800">客户管理</h1>
-          <p className="text-xs text-slate-400">{customers.filter(c => !['won','lost'].includes(c.stage)).length} 个进行中</p>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center">
+            <Icon name="users" size={20} />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-slate-800">客户</h1>
+            <p className="text-xs text-slate-400">{activeCount} 个在跟进</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+          <div className="flex rounded-full border border-slate-200 overflow-hidden">
             <button onClick={() => setView('kanban')} className={`text-xs px-3 py-1.5 ${view === 'kanban' ? 'bg-blue-500 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>看板</button>
             <button onClick={() => setView('list')} className={`text-xs px-3 py-1.5 ${view === 'list' ? 'bg-blue-500 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>列表</button>
           </div>
-          <Button size="sm" onClick={() => setShowAdd(true)}>+ 添加</Button>
+          <Button size="sm" pill onClick={() => setShowAdd(true)} icon={<Icon name="plus" size={15} />}>添加</Button>
         </div>
       </div>
 
@@ -65,34 +70,31 @@ export function Customers({ onNavigate }) {
         <div className="flex-1 flex items-center justify-center">
           <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
         </div>
+      ) : customers.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
+          <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-3">
+            <Icon name="users-plus" size={28} />
+          </div>
+          <p className="text-sm font-medium text-slate-700">还没有客户</p>
+          <p className="text-xs text-slate-400 mt-1 mb-3">从线索池挑一个，或手动添加第一个客户</p>
+          <Button size="sm" pill onClick={() => setShowAdd(true)} icon={<Icon name="plus" size={15} />}>添加客户</Button>
+        </div>
       ) : view === 'kanban' ? (
-        /* 看板视图（横向滚动） */
         <div className="flex-1 overflow-x-auto">
           <div className="flex gap-3 px-4 py-4 h-full min-w-max">
             {activeStages.map(stage => {
-              const meta = STAGE_META[stage]
               const stageCustomers = grouped[stage] || []
               return (
                 <div key={stage} className="w-64 flex-shrink-0 flex flex-col">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-1.5">
-                      <StageBadge stage={stage} />
-                      <span className="text-xs text-slate-400">{stageCustomers.length}</span>
-                    </div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <StageBadge stage={stage} />
+                    <span className="text-xs text-slate-400">{stageCustomers.length}</span>
                   </div>
                   <div className="flex-1 space-y-2 overflow-y-auto">
                     {stageCustomers.map(c => (
-                      <CustomerCard
-                        key={c.id}
-                        customer={c}
-                        onClick={() => setSelected(c)}
-                        onStageChange={handleStageChange}
-                        stages={STAGES}
-                      />
+                      <CustomerCard key={c.id} customer={c} onClick={() => setSelected(c)} onStageChange={handleStageChange} stages={STAGES} />
                     ))}
-                    {stageCustomers.length === 0 && (
-                      <div className="text-center py-6 text-slate-300 text-xs">暂无</div>
-                    )}
+                    {stageCustomers.length === 0 && <div className="text-center py-6 text-slate-300 text-xs">暂无</div>}
                   </div>
                 </div>
               )
@@ -100,7 +102,6 @@ export function Customers({ onNavigate }) {
           </div>
         </div>
       ) : (
-        /* 列表视图 */
         <div className="flex-1 overflow-y-auto px-4 py-4">
           <div className="space-y-2">
             {customers.map(c => (
@@ -110,35 +111,24 @@ export function Customers({ onNavigate }) {
         </div>
       )}
 
-      {/* 客户详情侧边栏 */}
       {selected && (
-        <CustomerDetail
-          customer={selected}
-          onClose={() => setSelected(null)}
-          onUpdate={load}
-          onNavigate={onNavigate}
-        />
+        <CustomerDetail customer={selected} onClose={() => setSelected(null)} onUpdate={load} onNavigate={onNavigate} />
       )}
-
-      {/* 添加客户弹窗 */}
       {showAdd && <AddCustomerModal onClose={() => setShowAdd(false)} onAdd={load} />}
     </div>
   )
 }
 
-function CustomerCard({ customer, onClick, onStageChange, stages }) {
+function CustomerCard({ customer, onClick }) {
   const daysSince = customer.last_interaction_at
     ? Math.floor((Date.now() - new Date(customer.last_interaction_at)) / 86400000)
     : null
 
   return (
-    <div
-      onClick={onClick}
-      className="bg-white border border-slate-100 rounded-xl p-3 cursor-pointer hover:border-blue-200 hover:shadow-sm transition-all"
-    >
+    <div onClick={onClick} className="bg-white border border-slate-100 rounded-2xl p-3 cursor-pointer hover:border-blue-200 hover:shadow-sm transition-all">
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-sm font-semibold text-slate-600 flex-shrink-0">
+          <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-sm font-semibold text-slate-600 flex-shrink-0">
             {customer.name[0]}
           </div>
           <span className="text-sm font-medium text-slate-800 truncate">{customer.name}</span>
@@ -161,11 +151,8 @@ function CustomerCard({ customer, onClick, onStageChange, stages }) {
 
 function CustomerListRow({ customer, onClick }) {
   return (
-    <div
-      onClick={onClick}
-      className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-3 cursor-pointer hover:border-blue-200 transition-all"
-    >
-      <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-base font-semibold text-slate-600 flex-shrink-0">
+    <div onClick={onClick} className="flex items-center gap-3 bg-white border border-slate-100 rounded-2xl px-4 py-3 cursor-pointer hover:border-blue-200 transition-all">
+      <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-base font-semibold text-slate-600 flex-shrink-0">
         {customer.name[0]}
       </div>
       <div className="flex-1 min-w-0">
@@ -201,17 +188,13 @@ function CustomerDetail({ customer, onClose, onUpdate, onNavigate }) {
   }
 
   useEffect(() => {
-    api.get(`/api/customers/${customer.id}`)
-      .then(d => setDetail(d))
-      .catch(() => {})
+    api.get(`/api/customers/${customer.id}`).then(d => setDetail(d)).catch(() => {})
   }, [customer.id])
 
   async function addNote(e) {
     e.preventDefault()
     if (!note.trim()) return
-    await api.post(`/api/customers/${customer.id}/interactions`, {
-      type: 'note', summary: note, next_action: nextAction || null
-    })
+    await api.post(`/api/customers/${customer.id}/interactions`, { type: 'note', summary: note, next_action: nextAction || null })
     toast('记录已添加', 'success')
     setNote('')
     setNextAction('')
@@ -230,23 +213,16 @@ function CustomerDetail({ customer, onClose, onUpdate, onNavigate }) {
             <StageBadge stage={customer.stage} />
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              icon="💬"
-              onClick={handlePullToChat}
-              disabled={pulling}
-            >
-              {pulling ? '...' : '拉进对话'}
+            <Button size="sm" variant="ghost" pill icon={<Icon name="message" size={15} />} onClick={handlePullToChat} disabled={pulling}>
+              {pulling ? '…' : '拉进对话'}
             </Button>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+            <button onClick={onClose} aria-label="关闭" className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"><Icon name="x" size={18} /></button>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {detail && (
             <>
-              {/* 基本信息 */}
               <InfoSection title="基本信息">
                 {detail.customer.contact_name && <InfoRow label="联系人" value={detail.customer.contact_name} />}
                 {detail.customer.contact_phone && <InfoRow label="电话" value={detail.customer.contact_phone} />}
@@ -255,12 +231,11 @@ function CustomerDetail({ customer, onClose, onUpdate, onNavigate }) {
                 {detail.customer.notes && <InfoRow label="备注" value={detail.customer.notes} />}
               </InfoSection>
 
-              {/* 沟通记录 */}
               {detail.interactions.length > 0 && (
                 <InfoSection title="沟通记录">
                   <div className="space-y-2">
                     {detail.interactions.map(i => (
-                      <div key={i.id} className="text-sm bg-slate-50 rounded-xl p-3">
+                      <div key={i.id} className="text-sm bg-slate-50 rounded-2xl p-3">
                         <p className="text-slate-700">{i.summary}</p>
                         {i.next_action && <p className="text-xs text-blue-600 mt-1">下一步：{i.next_action}</p>}
                         <p className="text-xs text-slate-400 mt-1">{i.user_name} · {i.created_at?.slice(0, 10)}</p>
@@ -270,7 +245,6 @@ function CustomerDetail({ customer, onClose, onUpdate, onNavigate }) {
                 </InfoSection>
               )}
 
-              {/* 关联任务 */}
               {detail.tasks.length > 0 && (
                 <InfoSection title={`待办任务 (${detail.tasks.length})`}>
                   <div className="space-y-1.5">
@@ -286,23 +260,11 @@ function CustomerDetail({ customer, onClose, onUpdate, onNavigate }) {
             </>
           )}
 
-          {/* 添加记录 */}
           <form onSubmit={addNote} className="space-y-2">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">添加沟通记录</p>
-            <textarea
-              value={note}
-              onChange={e => setNote(e.target.value)}
-              placeholder="记录本次沟通内容..."
-              rows={3}
-              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-300 resize-none"
-            />
-            <input
-              value={nextAction}
-              onChange={e => setNextAction(e.target.value)}
-              placeholder="下一步行动（选填）"
-              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-300"
-            />
-            <Button type="submit" size="sm" disabled={!note.trim()}>保存记录</Button>
+            <p className="text-xs font-semibold text-slate-500">添加沟通记录</p>
+            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="记录本次沟通内容…" rows={3} className="w-full border border-slate-200 rounded-2xl px-3 py-2.5 text-sm outline-none focus:border-blue-300 resize-none" />
+            <input value={nextAction} onChange={e => setNextAction(e.target.value)} placeholder="下一步行动（选填）" className="w-full border border-slate-200 rounded-2xl px-3 py-2 text-sm outline-none focus:border-blue-300" />
+            <Button type="submit" size="sm" pill disabled={!note.trim()}>保存记录</Button>
           </form>
         </div>
       </div>
@@ -313,7 +275,7 @@ function CustomerDetail({ customer, onClose, onUpdate, onNavigate }) {
 function InfoSection({ title, children }) {
   return (
     <div>
-      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">{title}</p>
+      <p className="text-xs font-semibold text-slate-400 mb-2">{title}</p>
       {children}
     </div>
   )
@@ -354,7 +316,7 @@ function AddCustomerModal({ onClose, onAdd }) {
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center">
       <div className="fixed inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 space-y-4">
+      <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-5 space-y-4">
         <h2 className="font-bold text-slate-800">添加客户</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <Field label="客户名称 *">
@@ -377,8 +339,8 @@ function AddCustomerModal({ onClose, onAdd }) {
             <input value={form.contact_phone} onChange={e => update('contact_phone', e.target.value)} placeholder="手机或座机" className={INPUT_CLASS} />
           </Field>
           <div className="flex gap-2 pt-1">
-            <Button type="button" variant="secondary" onClick={onClose} className="flex-1">取消</Button>
-            <Button type="submit" loading={loading} className="flex-1">添加</Button>
+            <Button type="button" variant="secondary" pill onClick={onClose} className="flex-1">取消</Button>
+            <Button type="submit" pill loading={loading} className="flex-1">添加</Button>
           </div>
         </form>
       </div>
@@ -395,4 +357,4 @@ function Field({ label, children }) {
   )
 }
 
-const INPUT_CLASS = 'w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-300 bg-white'
+const INPUT_CLASS = 'w-full border border-slate-200 rounded-2xl px-3 py-2 text-sm outline-none focus:border-blue-300 bg-white'
