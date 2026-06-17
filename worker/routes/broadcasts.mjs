@@ -18,15 +18,28 @@ broadcasts.get('/', requireAuth(), async (c) => {
   return c.json({ broadcasts: results })
 })
 
-// POST /api/broadcasts — 创建广播（admin/super_admin）
+// GET /api/broadcasts/recipients — 可选目标成员（发广播时勾选用）
+broadcasts.get('/recipients', requireAuth(), async (c) => {
+  const user = c.get('user')
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, display_name FROM users
+     WHERE is_active = 1 AND id != ?
+     ORDER BY display_name`
+  ).bind(user.id).all()
+  return c.json({ recipients: results })
+})
+
+// POST /api/broadcasts — 创建广播（管理员，或拥有 broadcast 权限的成员）
 broadcasts.post('/', requireAuth(), async (c) => {
   const user = c.get('user')
-  if (!['super_admin', 'admin'].includes(user.role)) {
+  const perms = c.get('perms')
+  const canBroadcast = perms.broadcast || ['super_admin', 'admin'].includes(user.role)
+  if (!canBroadcast) {
     return c.json({ error: 'Forbidden' }, 403)
   }
 
   const { title, content, target_user_ids } = await c.req.json()
-  if (!title || !content || !Array.isArray(target_user_ids)) {
+  if (!title || !content || !Array.isArray(target_user_ids) || target_user_ids.length === 0) {
     return c.json({ error: '标题、内容、目标用户必填' }, 400)
   }
 

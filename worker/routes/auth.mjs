@@ -115,7 +115,7 @@ auth.patch('/users/:id/permissions', requireAuth(), async (c) => {
 
   const { id } = c.req.param()
   const body = await c.req.json()
-  const allowed = ['agents', 'customers', 'tasks', 'quote', 'quoteTraining', 'insight']
+  const allowed = ['agents', 'customers', 'tasks', 'quote', 'quoteTraining', 'insight', 'broadcast']
 
   // 只更新允许的字段
   const current = await c.env.DB.prepare('SELECT permissions FROM users WHERE id = ?').bind(id).first()

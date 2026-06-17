@@ -17,6 +17,7 @@ const PERMISSIONS = [
   { key: 'quote', label: '方案工程师' },
   { key: 'quoteTraining', label: '方案训练' },
   { key: 'insight', label: '信息仓' },
+  { key: 'broadcast', label: '发广播' },
 ]
 
 const ROLE_META = {
