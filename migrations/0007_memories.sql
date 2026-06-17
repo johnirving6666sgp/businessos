@@ -24,9 +24,19 @@ CREATE INDEX IF NOT EXISTS idx_mem_type   ON memories(user_id, type);
 CREATE INDEX IF NOT EXISTS idx_mem_entity ON memories(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_mem_conv   ON memories(conv_id);
 
--- 初始演示数据
-INSERT INTO memories (user_id, type, title, content, entity_type, entity_name, is_pinned) VALUES
-('user_jamie', 'note', '真空熔炼炉核心卖点整理', '客户最关心的三点：1) 温度均匀性(±5℃) 2) 真空度(≤0.1Pa) 3) 本土化售后响应时间。相比德国/日本设备，价格优势40%，交货期短3个月。', null, null, 1),
-('user_jamie', 'activity', '中科院金属研究所线索进入"有意向"阶段', '李工确认预算200万，Q3采购计划，需要VIM-100规格方案。', 'opportunity', '中科院金属研究所-VIM采购', 0),
-('user_jamie', 'activity', '将北航材料院线索拉入对话', '就技术参数进行深度讨论，输出了定向凝固炉方案初稿。', 'opportunity', '北航材料院-定向凝固炉', 0),
-('user_jamie', 'note', '竞争对手分析：德国ALD vs 我司', 'ALD优势：品牌/技术积累。劣势：价格高60%、交货18个月、本地服务响应慢。我司切入点：性价比+快速响应+本地化定制。', null, null, 0);
+-- 初始演示数据（用 NOT EXISTS 守卫，保证迁移可重复执行不产生重复行）
+INSERT INTO memories (user_id, type, title, content, entity_type, entity_name, is_pinned)
+SELECT 'user_jamie', 'note', '真空熔炼炉核心卖点整理', '客户最关心的三点：1) 温度均匀性(±5℃) 2) 真空度(≤0.1Pa) 3) 本土化售后响应时间。相比德国/日本设备，价格优势40%，交货期短3个月。', null, null, 1
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE user_id='user_jamie' AND title='真空熔炼炉核心卖点整理');
+
+INSERT INTO memories (user_id, type, title, content, entity_type, entity_name, is_pinned)
+SELECT 'user_jamie', 'activity', '中科院金属研究所线索进入"有意向"阶段', '李工确认预算200万，Q3采购计划，需要VIM-100规格方案。', 'opportunity', '中科院金属研究所-VIM采购', 0
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE user_id='user_jamie' AND title='中科院金属研究所线索进入"有意向"阶段');
+
+INSERT INTO memories (user_id, type, title, content, entity_type, entity_name, is_pinned)
+SELECT 'user_jamie', 'activity', '将北航材料院线索拉入对话', '就技术参数进行深度讨论，输出了定向凝固炉方案初稿。', 'opportunity', '北航材料院-定向凝固炉', 0
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE user_id='user_jamie' AND title='将北航材料院线索拉入对话');
+
+INSERT INTO memories (user_id, type, title, content, entity_type, entity_name, is_pinned)
+SELECT 'user_jamie', 'note', '竞争对手分析：德国ALD vs 我司', 'ALD优势：品牌/技术积累。劣势：价格高60%、交货18个月、本地服务响应慢。我司切入点：性价比+快速响应+本地化定制。', null, null, 0
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE user_id='user_jamie' AND title='竞争对手分析：德国ALD vs 我司');

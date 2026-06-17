@@ -17,6 +17,7 @@
   "vars": {
     "APP_NAME": "BusinessOS",
     "APP_VERSION": "2.0.0"
-  },
-  "secrets": ["ANTHROPIC_API_KEY", "CRAWLER_SECRET"]
+  }
+  // 需要的 Secrets（用 `wrangler secret put <NAME>` 设置）：
+  //   ANTHROPIC_API_KEY, CRAWLER_SECRET
 }
